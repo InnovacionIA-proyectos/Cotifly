@@ -15,7 +15,7 @@ public sealed record clsValidacionTextosCotizacion(string? Asunto, string? Intro
 }
 
 /// <summary>
-/// Esquema y reglas de los textos del PDF (HU-013.5, ADR-018 §2a). La salida del redactor es un objeto JSON con exactamente
+/// Esquema y reglas de los textos del PDF (ADR-018 §2a). La salida del redactor es un objeto JSON con exactamente
 /// <c>asunto</c> e <c>introduccion</c> (texto). Reglas, en este orden (la primera que falla es el motivo):
 /// <list type="number">
 /// <item>No vacíos: asunto de 1 a <see cref="clsTextosCotizacion.LargoMaximoAsunto"/> caracteres e introducción de 1 a

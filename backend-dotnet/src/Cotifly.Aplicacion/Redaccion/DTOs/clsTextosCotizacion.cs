@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace Cotifly.Aplicacion.Redaccion.DTOs;
 
 /// <summary>
-/// <c>TextosCotizacion</c> (HU-013.5): asunto (hasta 120 caracteres) e introducción (hasta 900 de la IA y 1100 del comercial, párrafos separados por una línea en
+/// <c>TextosCotizacion</c>: asunto (hasta 120 caracteres) e introducción (hasta 900 de la IA y 1100 del comercial, párrafos separados por una línea en
 /// blanco) del PDF guardados en <c>Cotizaciones.textosCotizacion</c>. <see cref="Fuente"/> es <see cref="FuenteIa"/> o
 /// <see cref="FuenteEstandar"/>; <see cref="Editado"/> es <c>true</c> si el comercial los cambió después.
 /// </summary>

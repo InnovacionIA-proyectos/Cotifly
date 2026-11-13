@@ -18,15 +18,15 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Licitaciones.Services;
 
 /// <summary>
-/// Licitaciones desde Excel (HU-011.2, ADR-017): analizar el pliego en Nexo, crear la cotización con sus N líneas y enviarla a Nexo
+/// Licitaciones desde Excel (ADR-017): analizar el pliego en Nexo, crear la cotización con sus N líneas y enviarla a Nexo
 /// como UNA solicitud, y verla línea por línea. Solo cotizaciones propias (<c>COTIZACION_NO_ENCONTRADA</c> → 404), salvo la vista y el
-/// Excel de la licitación (HU-034.1, #201): también el gerente de la regional del dueño y el director, en solo lectura.
+/// Excel de la licitación: también el gerente de la regional del dueño y el director, en solo lectura.
 /// </summary>
 public interface IClsLicitacionService
 {
     /// <summary>
     /// Reenvía el Excel al análisis de Nexo (no guarda nada). <c>ARCHIVO_REQUERIDO</c>, <c>FORMATO_NO_SOPORTADO</c> y
-    /// <c>ARCHIVO_DEMASIADO_GRANDE</c> se validan antes de llamar a Nexo; los errores de lectura los devuelve Nexo. HU-023.5 (#160): cada
+    /// <c>ARCHIVO_DEMASIADO_GRANDE</c> se validan antes de llamar a Nexo; los errores de lectura los devuelve Nexo. Cada
     /// fila trae el <c>codigoMercancia</c> de la columna de código del Excel o, si no hay, el más parecido del catálogo del cubicador,
     /// marcado como sugerido (<see cref="clsHojaExcel.Mercancias"/>). Sin catálogo, el análisis no falla.
     /// </summary>
@@ -37,8 +37,8 @@ public interface IClsLicitacionService
     /// posiciones y el Excel original en <c>pendiente_envio</c>, la confirma y la envía a Nexo con N líneas. Si Nexo falla la
     /// cotización se devuelve igual, en <c>error_envio</c> (se reintenta con <c>POST /web/cotizaciones/{folio}/costeo/reintentar</c>).
     /// En USD (ADR-014 §5) consulta antes la TRM del día y la guarda en <c>trmAplicada</c>; sin TRM, <c>TRM_NO_DISPONIBLE</c> y nada se guarda.
-    /// HU-013.11: cada fila se valida además por código de catálogo (G2, <c>CODIGO_NO_CATALOGO</c>) y con las reglas condicionales de
-    /// G3, y su origen y destino se resuelven a ids de municipio de Nexo (G6, <see cref="clsMunicipiosLicitacion"/>). Sin catálogo
+    /// Cada fila se valida además por código de catálogo (<c>CODIGO_NO_CATALOGO</c>) y con las reglas condicionales de
+    /// captura, y su origen y destino se resuelven a ids de municipio de Nexo (<see cref="clsMunicipiosLicitacion"/>). Sin catálogo
     /// maestro utilizable, 503 <c>CATALOGOS_FLETE_NO_DISPONIBLE</c>; sin catálogo de municipios (si alguna fila lo necesita), 503
     /// <c>MUNICIPIOS_NO_DISPONIBLE</c>; en ambos casos nada se guarda. Si además hay errores que se detectan sin ese catálogo, se
     /// devuelve el reporte con todos ellos y el código del catálogo caído en <c>error.detalle.motivo</c>.
@@ -46,7 +46,7 @@ public interface IClsLicitacionService
     Task<clsResultadoLicitacion> CrearAsync(Guid usuarioId, clsEntradaLicitacion entrada, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// HU-044.10 (#293, parte 3): <see cref="CrearAsync"/> con <c>Idempotency-Key</c> opcional (<see cref="IClsAlmacenIdempotencia"/>).
+    /// <see cref="CrearAsync"/> con <c>Idempotency-Key</c> opcional (<see cref="IClsAlmacenIdempotencia"/>).
     /// Sin clave (o sin almacén), llama directo a <see cref="CrearAsync"/>. Con clave, la repetición con la misma clave y el mismo
     /// cuerpo+archivo devuelve el mismo folio releyendo la licitación (201 con su estado de ahora). Solo el 201 (licitación creada)
     /// consume la clave: un reporte por fila (400) o un 503 NO la consumen, así la repetición se vuelve a evaluar. La misma clave con
@@ -59,23 +59,23 @@ public interface IClsLicitacionService
         Guid usuarioId, clsEntradaLicitacion entrada, string? claveIdempotencia, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// La licitación con el estado y el precio de cada línea (nunca el costo de Nexo). HU-023.5 (#160): con los camiones de cada ruta, el
-    /// progreso de la cubicación en segundo plano y los avisos del cubicador. HU-034.1 (#201, parte A): además del dueño, la ve en solo
+    /// La licitación con el estado y el precio de cada línea (nunca el costo de Nexo), con los camiones de cada ruta, el
+    /// progreso de la cubicación en segundo plano y los avisos del cubicador. Además del dueño, la ve en solo
     /// lectura (<see cref="clsLicitacion.SoloLectura"/>) el usuario autenticado si es el director o el gerente de la regional del dueño
     /// (<see cref="Cotizaciones.Services.IClsAccesoCotizacionAjena"/>, auditado con <see cref="clsLicitacionService.HerramientaConsulta"/>).
     /// </summary>
     Task<clsResultado<clsLicitacion>> ObtenerAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Excel de la licitación con los resultados (HU-011.3): el original del cliente con las columnas de Cotifly agregadas (o una hoja
+    /// Excel de la licitación con los resultados: el original del cliente con las columnas de Cotifly agregadas (o una hoja
     /// nueva si no hay original). Se puede exportar en cualquier momento: las líneas sin costeo quedan marcadas. <c>COTIZACION_NO_ENCONTRADA</c>
-    /// si no es suya o no tiene líneas. HU-034.1 (#201, parte A): el director o el gerente de la regional del dueño reciben el mismo
+    /// si no es suya o no tiene líneas. El director o el gerente de la regional del dueño reciben el mismo
     /// archivo (nunca trae costos), auditado con <see cref="clsLicitacionService.HerramientaExcel"/>.
     /// </summary>
     Task<clsResultado<clsArchivoExportado>> ExportarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// HU-023.5 (#160), para "Ver detalle" (HU-018.1, parte C): el mismo Excel de <see cref="ExportarAsync"/> (una fila por ruta con sus
+    /// Para "Ver detalle": el mismo Excel de <see cref="ExportarAsync"/> (una fila por ruta con sus
     /// camiones, la hoja "Camiones Cotifly" y el resumen) para CUALQUIER cotización propia con rutas, no solo una licitación. Sin Excel
     /// original, arma la hoja con los campos de cada ruta. <c>COTIZACION_NO_ENCONTRADA</c> si no es suya o no tiene rutas.
     /// </summary>
@@ -106,13 +106,13 @@ public sealed class clsLicitacionService(
 {
     public const string TipoXlsx = clsArchivoLicitacion.TipoXlsx;
 
-    /// <summary>HU-044.10 (#293): ámbito de las claves de idempotencia de crear una licitación (con el comercial).</summary>
+    /// <summary>Ámbito de las claves de idempotencia de crear una licitación (con el comercial).</summary>
     public const string OperacionIdempotencia = "crear-licitacion";
 
-    /// <summary>HU-034.1 (#201): auditoría de la consulta de una licitación ajena (gerente o director), permitida o no.</summary>
+    /// <summary>Auditoría de la consulta de una licitación ajena (gerente o director), permitida o no.</summary>
     public const string HerramientaConsulta = "consultar_licitacion";
 
-    /// <summary>HU-034.1 (#201): auditoría de la descarga del Excel de una licitación ajena (gerente o director), permitida o no.</summary>
+    /// <summary>Auditoría de la descarga del Excel de una licitación ajena (gerente o director), permitida o no.</summary>
     public const string HerramientaExcel = "exportar_excel_licitacion";
 
     public Task<clsResultado<clsArchivoExportado>> ExportarAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default) =>
@@ -123,7 +123,7 @@ public sealed class clsLicitacionService(
 
     /// <summary>
     /// La cotización propia de <paramref name="usuarioId"/> o, si no es suya y hay <paramref name="herramienta"/>, la ajena que puede ver en
-    /// solo lectura (HU-034.1, #201: director o gerente de la regional del dueño, auditado). El dueño primero: un comercial ajeno nunca
+    /// solo lectura (director o gerente de la regional del dueño, auditado). El dueño primero: un comercial ajeno nunca
     /// carga el agregado de otro.
     /// </summary>
     private async Task<(clsCotizacionSolicitud? Cotizacion, bool SoloLectura)> CargarAsync(
@@ -140,7 +140,7 @@ public sealed class clsLicitacionService(
             return (propia, false);
         }
 
-        // Solo licitaciones: un folio spot de la regional no se audita como "permitido" para responder 404 después (#201, validación).
+        // Solo licitaciones: un folio spot de la regional no se audita como "permitido" para responder 404 después.
         var ajena = await ajenas.ObtenerAsync(usuarioId, folio, herramienta, TipoSolicitud.Licitacion, cancellationToken);
         return (ajena, ajena is not null);
     }
@@ -148,7 +148,7 @@ public sealed class clsLicitacionService(
     private async Task<clsResultado<clsArchivoExportado>> ExportarAsync(
         Guid usuarioId, string folio, bool soloLicitacion, CancellationToken cancellationToken)
     {
-        // HU-034.1 (#201): el Excel de la licitación también para el gerente de la regional y el director (el mismo archivo: no trae
+        // El Excel de la licitación también para el gerente de la regional y el director (el mismo archivo: no trae
         // costos); el de "Ver detalle" (ExportarCotizacionAsync) sigue siendo solo del dueño.
         var (cotizacion, _) = await CargarAsync(usuarioId, folio, soloLicitacion ? HerramientaExcel : null, cancellationToken);
         if (cotizacion is null || cotizacion.Rutas.Count == 0 || (soloLicitacion && cotizacion.TipoSolicitud != TipoSolicitud.Licitacion))
@@ -160,9 +160,9 @@ public sealed class clsLicitacionService(
             ? await cotizaciones.ObtenerArchivoLicitacionAsync(cotizacion.Id, cancellationToken)
             : null;
         var nombres = await NombresCubicadorAsync(cotizacion, cancellationToken);
-        // Corrección conexos (nombre nunca id): nombre del catálogo de Nexo de los conexos heredados sin nombre guardado.
+        // Los conexos heredados sin nombre guardado toman el nombre del catálogo de Nexo (nunca el id).
         var nombresConexos = await Costeo.Services.clsCosteoCotizacionService.NombresAsync(categoriasConexos, cotizacion, logger, cancellationToken);
-        // HU-044.7 (#290): una licitación leída con la IA de NEXO (leer_estructura) se exporta en un Excel NUEVO (sin pasar el original).
+        // Una licitación leída con la IA de NEXO (leer_estructura) se exporta en un Excel NUEVO (sin pasar el original).
         var leidaConIa = archivo is { OrigenLectura: clsOrigenLectura.LeerEstructura };
         var datos = DatosExportacion(cotizacion, leidaConIa ? null : archivo, reloj.AhoraUtc, nombres.Vehiculos, nombres.Carrocerias, nombresConexos, leidaConIa);
         var generado = await exportador.GenerarAsync(datos, cancellationToken);
@@ -175,10 +175,10 @@ public sealed class clsLicitacionService(
     }
 
     /// <summary>
-    /// Datos de la exportación (HU-021: una fila por ruta): la tarifa del transporte de la ruta (sin conexos; desde HU-033 el PDF del pliego, en cambio, imprime el valor final de la ruta con los conexos incluidos),
-    /// estado legible y los servicios conexos de las rutas con su precio, aparte. El total es la suma de las tarifas (sin conexos), como
-    /// el resumen anterior a HU-033: los conexos no se cobran dos veces. Origen y destino son los nombres copiados de la ruta; el vehículo, el de su camión (o los de sus camiones). El costo de
-    /// Nexo no entra a este objeto: el exportador no lo puede escribir. HU-023.5 (#160): cada línea lleva sus camiones con el nombre del
+    /// Datos de la exportación (una fila por ruta): la tarifa del transporte de la ruta (sin conexos; el PDF del pliego, en cambio, imprime el valor final de la ruta con los conexos incluidos),
+    /// estado legible y los servicios conexos de las rutas con su precio, aparte. El total es la suma de las tarifas (sin conexos):
+    /// los conexos no se cobran dos veces. Origen y destino son los nombres copiados de la ruta; el vehículo, el de su camión (o los de sus camiones). El costo de
+    /// Nexo no entra a este objeto: el exportador no lo puede escribir. Cada línea lleva sus camiones con el nombre del
     /// vehículo y de la carrocería del catálogo del cubicador (<paramref name="vehiculos"/> y <paramref name="carrocerias"/>, por código; si
     /// no están, el código) y el estado de su cubicación.
     /// </summary>
@@ -193,10 +193,10 @@ public sealed class clsLicitacionService(
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var lineas = cotizacion.RutasOrdenadas;
-        // HU-028.1 (#183): una ruta rechazada por la Mesa de Costeo sale "SIN COSTEO" (sin precio ni motivo), sin sus conexos, y no suma.
+        // Una ruta rechazada por la Mesa de Costeo sale "SIN COSTEO" (sin precio ni motivo), sin sus conexos, y no suma.
         var tarifas = lineas.Select(l => l.Rechazada ? null : Costeo.Services.clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)).ToList();
         var cotizables = lineas.Select((l, i) => (Ruta: l, Tarifa: tarifas[i])).Where(x => !x.Ruta.Rechazada).ToList();
-        // Corrección conexos (nombre nunca id): ConexosConPrecio pobla Nombre con el guardado o el del catálogo de Nexo por id (nombresConexos)
+        // ConexosConPrecio pobla Nombre con el guardado o el del catálogo de Nexo por id (nombresConexos)
         // y cae a la categoría como respaldo legible; el export nunca imprime el id interno.
         var conexos = lineas.Where(r => !r.Rechazada)
             .SelectMany(r => Costeo.Services.clsCosteoCotizacionService.ConexosConPrecio(cotizacion, r, nombres: nombresConexos))
@@ -225,7 +225,7 @@ public sealed class clsLicitacionService(
         };
     }
 
-    /// <summary>HU-023.5: los camiones de la ruta para el Excel, con los nombres del catálogo del cubicador (o el código).</summary>
+    /// <summary>Los camiones de la ruta para el Excel, con los nombres del catálogo del cubicador (o el código).</summary>
     public static IReadOnlyList<clsCamionExportacion> CamionesExportacion(
         clsLineaSolicitud ruta, IReadOnlyDictionary<string, string>? vehiculos = null, IReadOnlyDictionary<string, string>? carrocerias = null)
     {
@@ -236,12 +236,12 @@ public sealed class clsLicitacionService(
             i + 1, Nombre(v.TipoVehiculo, vehiculos), Nombre(v.Carroceria, carrocerias), v.PesoKg, v.VolumenTotalM3,
             v.PorcentajeLlenadoVolumen, v.PorcentajeLlenadoPeso)
         {
-            // HU-028.1 (#183): la hoja "Camiones Cotifly" marca el camión rechazado por la Mesa (sin el motivo).
+            // La hoja "Camiones Cotifly" marca el camión rechazado por la Mesa (sin el motivo).
             Rechazado = v.Rechazado,
         })];
     }
 
-    /// <summary>HU-023.5: estado de la cubicación en segundo plano para el Excel (<c>null</c> si la ruta se cubicó al guardarla).</summary>
+    /// <summary>Estado de la cubicación en segundo plano para el Excel (<c>null</c> si la ruta se cubicó al guardarla).</summary>
     public static string? CubicacionLegible(clsLineaSolicitud ruta)
     {
         ArgumentNullException.ThrowIfNull(ruta);
@@ -255,7 +255,7 @@ public sealed class clsLicitacionService(
     }
 
     /// <summary>
-    /// Nombres de los vehículos y carrocerías del catálogo del cubicador (por código), como el PDF (HU-023.1). Sin cubicador, sin camiones
+    /// Nombres de los vehículos y carrocerías del catálogo del cubicador (por código), como el PDF. Sin cubicador, sin camiones
     /// con código o con el catálogo caído, vacíos: el Excel muestra el código.
     /// </summary>
     private async Task<(IReadOnlyDictionary<string, string>? Vehiculos, IReadOnlyDictionary<string, string>? Carrocerias)> NombresCubicadorAsync(
@@ -288,11 +288,11 @@ public sealed class clsLicitacionService(
         return diccionario;
     }
 
-    /// <summary>HU-028.1 (#183): estado legible de una ruta rechazada por la Mesa de Costeo de Nexo (sin el motivo).</summary>
+    /// <summary>Estado legible de una ruta rechazada por la Mesa de Costeo de Nexo (sin el motivo).</summary>
     public const string EstadoRechazadaEnNexo = "Rechazada en NEXO";
 
     /// <summary>
-    /// Estado de la línea para el Excel: <c>Costeada</c> solo si tiene precio con margen. HU-028.1 (#183): una ruta rechazada por la Mesa
+    /// Estado de la línea para el Excel: <c>Costeada</c> solo si tiene precio con margen. Una ruta rechazada por la Mesa
     /// (todos sus camiones) es <see cref="EstadoRechazadaEnNexo"/>, sin el motivo.
     /// </summary>
     public static string EstadoLegible(clsLineaSolicitud linea)
@@ -331,7 +331,7 @@ public sealed class clsLicitacionService(
             return invalido;
         }
 
-        // HU-035.2 (#213): la lectura local va ANTES de Nexo. Pasa por los controles del Excel subido (bomba zip, libro denso, XXE, .xls
+        // La lectura local va ANTES de Nexo. Pasa por los controles del Excel subido (bomba zip, libro denso, XXE, .xls
         // renombrado, cupo de lecturas): un rechazo responde aquí y el archivo nunca sale a Nexo. Se lee una sola vez, con el cupo
         // liberado antes de llamar a Nexo (que puede tardar), y sus filas de Excel se cruzan después con el análisis de Nexo.
         var porHoja = await lector.FilasDeDatosPorHojaAsync(archivo.Contenido, cancellationToken);
@@ -347,15 +347,15 @@ public sealed class clsLicitacionService(
     }
 
     /// <summary>
-    /// HU-023.5 (#160): a cada hoja le agrega el código de mercancía de cada fila (<see cref="clsHojaExcel.Mercancias"/>): el de la columna
-    /// de código del Excel tal cual o, si no hay, el más parecido del catálogo del cubicador (<see cref="clsSugeridorMercancia"/>, el de la #157),
+    /// A cada hoja le agrega el código de mercancía de cada fila (<see cref="clsHojaExcel.Mercancias"/>): el de la columna
+    /// de código del Excel tal cual o, si no hay, el más parecido del catálogo del cubicador (<see cref="clsSugeridorMercancia"/>),
     /// marcado como sugerido. El catálogo se lee una vez (con caché) y solo si alguna hoja tiene una columna de mercancía; si no responde,
     /// el análisis sigue sin sugerencias (<see cref="clsAnalisisExcel.CatalogoMercanciasDisponible"/> = <c>false</c>).
     /// </summary>
     private async Task<clsAnalisisExcel> ConMercanciasAsync(clsAnalisisExcel analisis, CancellationToken cancellationToken)
     {
-        // HU-035.1 (#202): la lectura del catálogo y la detección viven en clsDetectorMercanciaExcel (compartidas con el Excel de mercancías
-        // y, desde HU-044.7 #290, con las tablas de leer-estructura).
+        // La lectura del catálogo y la detección viven en clsDetectorMercanciaExcel (compartidas con el Excel de mercancías
+        // y con las tablas de leer-estructura).
         var resultado = await clsDetectorMercanciaExcel.ConMercanciasAsync(analisis.Hojas, cubicador, logger, cancellationToken);
         return resultado.Aplicado
             ? analisis with { CatalogoMercanciasDisponible = resultado.CatalogoDisponible, Hojas = resultado.Hojas }
@@ -374,16 +374,16 @@ public sealed class clsLicitacionService(
         return clsDetectorMercanciaExcel.Mercancias(hoja.Filas, columnaTexto, columnaCodigo, catalogo, porCodigo);
     }
 
-    /// <summary>HU-023.5: la columna de la descripción de la mercancía (<see cref="clsDetectorMercanciaExcel.ColumnaMercancia"/>).</summary>
+    /// <summary>La columna de la descripción de la mercancía (<see cref="clsDetectorMercanciaExcel.ColumnaMercancia"/>).</summary>
     public static int? ColumnaMercancia(IReadOnlyList<string> encabezados) => clsDetectorMercanciaExcel.ColumnaMercancia(encabezados);
 
-    /// <summary>HU-023.5: la columna del código de la mercancía (<see cref="clsDetectorMercanciaExcel.ColumnaCodigoMercancia"/>).</summary>
+    /// <summary>La columna del código de la mercancía (<see cref="clsDetectorMercanciaExcel.ColumnaCodigoMercancia"/>).</summary>
     public static int? ColumnaCodigoMercancia(IReadOnlyList<string> encabezados) => clsDetectorMercanciaExcel.ColumnaCodigoMercancia(encabezados);
 
     /// <summary>
-    /// HU-013.15 (#124): agrega a cada hoja del análisis de Nexo el número de fila de Excel de cada una de sus filas (<c>filas_excel</c>),
+    /// Agrega a cada hoja del análisis de Nexo el número de fila de Excel de cada una de sus filas (<c>filas_excel</c>),
     /// con la misma regla de detección (<see cref="IClsLectorExcelLicitacion"/>), para que el frontend muestre la numeración del archivo
-    /// del comercial. <paramref name="porHoja"/> es la lectura local, hecha antes de llamar a Nexo (HU-035.2, #213: si Cotifly no puede
+    /// del comercial. <paramref name="porHoja"/> es la lectura local, hecha antes de llamar a Nexo (si Cotifly no puede
     /// leer el archivo, se rechaza antes de Nexo). Si una hoja no se pudo ubicar (o pasa de las 20 que se ubican) o no cuadra con lo que
     /// devolvió Nexo (otro total de filas), solo esa queda sin <c>filas_excel</c> y las demás lo conservan.
     /// </summary>
@@ -469,7 +469,7 @@ public sealed class clsLicitacionService(
     }
 
     /// <summary>
-    /// HU-044.10 (#293): huella (SHA-256) de la petición de crear una licitación: el cuerpo (sin los bytes del archivo) más el nombre y el
+    /// Huella (SHA-256) de la petición de crear una licitación: el cuerpo (sin los bytes del archivo) más el nombre y el
     /// SHA-256 del archivo. La misma clave con otro cuerpo u otro archivo es <c>IDEMPOTENCY_KEY_REUTILIZADA</c> (409).
     /// </summary>
     public static string Huella(clsEntradaLicitacion entrada)
@@ -517,7 +517,7 @@ public sealed class clsLicitacionService(
             return clsResultadoLicitacion.Fallo(new clsErrorDominio(clsCodigosError.LicitacionInvalida, "El tipo de una licitación es 'licitacion'."));
         }
 
-        // HU-044.7 (#290): origen_lectura decide cómo se mapea la fila y cómo se exporta. Vacío = analizar_excel (el flujo de hoy no cambia);
+        // origen_lectura decide cómo se mapea la fila y cómo se exporta. Vacío = analizar_excel;
         // un valor desconocido es 400 VALIDATION_ERROR en origen_lectura (el mismo código del contrato), con detalle.campos.
         if (!clsOrigenLectura.EsValido(entrada.OrigenLectura))
         {
@@ -531,15 +531,15 @@ public sealed class clsLicitacionService(
 
         var leerEstructura = clsOrigenLectura.EsLeerEstructura(entrada.OrigenLectura);
 
-        // HU-032 (#197): el vehículo elegido de cada fila es el respaldo del cubicador (y obligatorio en una fila sin mercancías
-        // cubicables, salvo Contenedor). Con Captura:AceptarVehiculoCliente apagada se ignora (decisión 7 de HU-021).
+        // El vehículo elegido de cada fila es el respaldo del cubicador (y obligatorio en una fila sin mercancías
+        // cubicables, salvo Contenedor). Con Captura:AceptarVehiculoCliente apagada se ignora.
         entrada = entrada with
         {
             Lineas = [.. clsEnvioCosteoService.SinVehiculo(entrada.Lineas ?? [], logger, opcionesCaptura?.Value.AceptarVehiculoCliente ?? true).Select(l => l!)],
         };
 
         // El archivo se valida primero (un archivo ilegible invalida todas las filas) y se cuenta su hoja con la regla de Nexo.
-        // HU-035.2 (#213): la lectura pasa por los controles del Excel subido. Con archivo la hoja es obligatoria (sin ella, el reporte
+        // La lectura pasa por los controles del Excel subido. Con archivo la hoja es obligatoria (sin ella, el reporte
         // no deja guardar nada): todo original que se guarda, y que la exportación abre después con ClosedXML, los pasó.
         IReadOnlyList<int>? filasExcel = null;
         if (entrada.Archivo is { } archivo)
@@ -549,7 +549,7 @@ public sealed class clsLicitacionService(
                 return clsResultadoLicitacion.Fallo(invalido);
             }
 
-            // HU-044.7 (#290): con leer_estructura la 'hoja' es el nombre de la tabla (solo referencia) y la 'fila' es el índice dentro de la
+            // Con leer_estructura la 'hoja' es el nombre de la tabla (solo referencia) y la 'fila' es el índice dentro de la
             // tabla, no de la hoja: NO se relee el Excel original ni se calcula filas_excel (el archivo se guarda para exportarlo en una hoja nueva).
             if (!leerEstructura && !string.IsNullOrWhiteSpace(entrada.Hoja) && entrada.Hoja.Trim().Length <= clsArchivoLicitacion.LargoHoja)
             {
@@ -566,10 +566,10 @@ public sealed class clsLicitacionService(
         var validadas = await ValidarFilasAsync(usuarioId, entrada, filasExcel, cancellationToken);
         if (validadas.Errores.Count > 0)
         {
-            // HU-013.11: con un catálogo caído se reportan igual los errores que se detectan sin él, con el código del catálogo en
-            // detalle.motivo (lo que dependía de ese catálogo se valida al volver a enviarla). HU-013.15: cada error con su fila de Excel.
-            // OBS-1027-4 (#226): en el mismo reporte, la línea de negocio que no da margen ("Licitaciones" de Nexo, una que no existe o
-            // inactiva), con las líneas válidas en detalle.lineas_validas; antes aparecía en un segundo intento, al corregir las filas.
+            // Con un catálogo caído se reportan igual los errores que se detectan sin él, con el código del catálogo en
+            // detalle.motivo (lo que dependía de ese catálogo se valida al volver a enviarla). Cada error lleva su fila de Excel.
+            // En el mismo reporte va la línea de negocio que no da margen ("Licitaciones" de Nexo, una que no existe o
+            // inactiva), con las líneas válidas en detalle.lineas_validas, para corregir todo en un solo intento.
             var (deLinea, lineasValidas) = await ErroresDeLineaNegocioAsync(entrada, cancellationToken);
             var invalida = clsResultadoLicitacion.Invalida(
                 clsValidadorLicitacion.ConFilaExcel([.. validadas.Errores, .. deLinea], filasExcel), validadas.NoDisponible?.Codigo);
@@ -591,7 +591,7 @@ public sealed class clsLicitacionService(
 
         var entradas = validadas.Lineas;
 
-        // HU-021.6: cada fila puede traer su línea de negocio; sin ella, la del encabezado.
+        // Cada fila puede traer su línea de negocio; sin ella, la del encabezado.
         var porNombre = new Dictionary<string, Dominio.Margen.clsMargenPolitica>(StringComparer.OrdinalIgnoreCase);
         var politicasPorRuta = new List<Dominio.Margen.clsMargenPolitica>(entradas.Count);
         foreach (var nombre in entradas.Select(l => (l.LineaNegocio ?? entrada.LineaNegocio)!.Trim()).Prepend(entrada.LineaNegocio!.Trim()))
@@ -604,14 +604,14 @@ public sealed class clsLicitacionService(
             var resuelta = await margen.ResolverLineaAsync(nombre, cancellationToken);
             if (resuelta is null)
             {
-                // HU-013.15 (#124): "Licitaciones" es una línea del catálogo de Nexo, no de Cotifly; el error dice qué líneas usar.
+                // "Licitaciones" es una línea del catálogo de Nexo, no de Cotifly; el error dice qué líneas usar.
                 return clsResultadoLicitacion.Fallo(clsMargenResolverService.LineaDesconocida(
                     nombre, await margen.LineasActivasAsync(cancellationToken) ?? [], esLicitacion: true));
             }
 
             if (!resuelta.Activa)
             {
-                // HU-013.15 (#124): también aquí el error trae las líneas que sí se pueden usar.
+                // También aquí el error trae las líneas que sí se pueden usar.
                 return clsResultadoLicitacion.Fallo(clsMargenResolverService.LineaInactiva(resuelta.LineaNegocio) with
                 {
                     Datos = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -621,7 +621,7 @@ public sealed class clsLicitacionService(
                 });
             }
 
-            // #278 (DU §8): la línea de Nexo de las filas de esa línea debe ser una de las seis (se envía la de cada ruta).
+            // La línea de Nexo de las filas de esa línea debe ser una de las seis (se envía la de cada ruta).
             if (clsMargenResolverService.LineaNexoInvalida(resuelta) is { } lineaNexo)
             {
                 return clsResultadoLicitacion.Fallo(lineaNexo);
@@ -633,8 +633,8 @@ public sealed class clsLicitacionService(
         politicasPorRuta.AddRange(entradas.Select(l => porNombre[(l.LineaNegocio ?? entrada.LineaNegocio)!.Trim()]));
         var politica = porNombre[entrada.LineaNegocio!.Trim()];
 
-        // HU-021.6: conexos con el costo del catálogo de Nexo y los camiones de cada ruta (cubicador, #133, con presupuesto de tiempo; o respaldo).
-        // HU-023.5 (#160): con el cubicador configurado, las rutas se guardan con un camión provisional y se cubican en segundo plano.
+        // Conexos con el costo del catálogo de Nexo y los camiones de cada ruta (cubicador con presupuesto de tiempo, o respaldo).
+        // Con el cubicador configurado, las rutas se guardan con un camión provisional y se cubican en segundo plano.
         var enSegundoPlano = CubicaEnSegundoPlano;
         var preparadas = await captura.PrepararAsync(
             usuarioId, [.. entradas.Select((l, i) => new clsRutaPorPreparar(l, politicasPorRuta[i].Id, l.Fila))], enSegundoPlano, cancellationToken);
@@ -673,7 +673,7 @@ public sealed class clsLicitacionService(
                 return cotizacion.Error;
             }
 
-            // HU-021.6: una ruta por fila (rutaOrigenIndice = fila del Excel) con su línea de negocio, mercancías, camión y conexos.
+            // Una ruta por fila (rutaOrigenIndice = fila del Excel) con su línea de negocio, mercancías, camión y conexos.
             var id = cotizacion.Valor.Id;
             cotizacion.Valor.RegistrarCaptura(entrada.Encabezado, preparadas.Rutas);
             cotizaciones.Agregar(cotizacion.Valor);
@@ -704,25 +704,25 @@ public sealed class clsLicitacionService(
 
         if (enSegundoPlano)
         {
-            // HU-023.5 (#160): la solicitud sale a Nexo cuando la última ruta quede cubicada (clsCubicacionLicitacionService).
+            // La solicitud sale a Nexo cuando la última ruta quede cubicada (clsCubicacionLicitacionService).
             logger.LogInformation("Licitación {Folio} guardada con {Rutas} ruta(s) por cubicar en segundo plano.", creada.Valor.Folio, creada.Valor.Rutas.Count);
             return clsResultadoLicitacion.Exito(creada.Valor);
         }
 
-        // Confirmada: desde aquí, sin el token de la petición (como HU-005.5, ADR-015 §3).
+        // Confirmada: desde aquí, sin el token de la petición (ADR-015 §3).
         await envio.EnviarGuardadaAsync(creada.Valor, politica, usuarioId);
         return clsResultadoLicitacion.Exito(creada.Valor);
     }
 
     /// <summary>
-    /// HU-023.5 (#160): ¿la licitación se cubica en segundo plano? Con el cubicador configurado y <c>Cubicador:LicitacionEnSegundoPlano</c>
+    /// ¿La licitación se cubica en segundo plano? Con el cubicador configurado y <c>Cubicador:LicitacionEnSegundoPlano</c>
     /// (por defecto sí). Sin cubicador, el respaldo (un camión sin vehículo por ruta) no llama a nadie y la licitación sale de una vez.
     /// </summary>
     private bool CubicaEnSegundoPlano =>
         cubicador is { EstaConfigurado: true } && (opcionesCubicacion?.Value.LicitacionEnSegundoPlano ?? true);
 
     /// <summary>
-    /// Todas las validaciones de las filas, juntas (HU-013.11): las de forma y rango de <see cref="clsValidadorLicitacion"/> (con G3) y
+    /// Todas las validaciones de las filas, juntas: las de forma y rango de <see cref="clsValidadorLicitacion"/> (con las condicionales) y
     /// las que dependen de catálogos (<see cref="IClsValidadorFilasLicitacion"/>: códigos de catálogo y municipios).
     /// </summary>
     private async Task<clsFilasLicitacionValidadas> ValidarFilasAsync(
@@ -738,34 +738,34 @@ public sealed class clsLicitacionService(
     public async Task<clsResultado<clsLicitacion>> ObtenerAsync(Guid usuarioId, string folio, CancellationToken cancellationToken = default)
     {
         var (cotizacion, soloLectura) = await CargarAsync(usuarioId, folio, HerramientaConsulta, cancellationToken);
-        // Endurecimiento A (#199): un folio de formulario no es una licitación: 404, como reintentar y el Excel.
+        // Un folio de formulario no es una licitación: 404, como reintentar y el Excel.
         if (cotizacion is null || cotizacion.TipoSolicitud != TipoSolicitud.Licitacion)
         {
             return new clsErrorDominio(clsCodigosError.CotizacionNoEncontrada, "Cotización no encontrada o no es tuya.");
         }
 
         var archivo = await cotizaciones.ObtenerResumenArchivoLicitacionAsync(cotizacion.Id, cancellationToken);
-        // HU-034.1 (#201): la vista nunca trajo costos; para el gerente o el director cambia solo solo_lectura.
+        // La vista nunca trae costos; para el gerente o el director cambia solo solo_lectura.
         return Vista(cotizacion, archivo) with { SoloLectura = soloLectura };
     }
 
     /// <summary>
     /// Vista de la licitación, una fila por ruta (solo precios: el costo de Nexo de cada ruta nunca sale). Como el Excel (no como el PDF del
-    /// pliego, que desde HU-033 imprime el valor final con conexos), el precio de cada fila es la tarifa del transporte y el total su suma, sin servicios conexos (que se ven aparte en el
-    /// costeo): HU-021, el precio de la ruta ya los incluye.
+    /// pliego, que imprime el valor final con conexos), el precio de cada fila es la tarifa del transporte y el total su suma, sin servicios conexos (que se ven aparte en el
+    /// costeo; el precio de la ruta ya los incluye).
     /// </summary>
     public static clsLicitacion Vista(clsCotizacionSolicitud cotizacion, clsArchivoLicitacionResumen? archivo)
     {
         ArgumentNullException.ThrowIfNull(cotizacion);
         var ordenadas = cotizacion.RutasOrdenadas;
-        // HU-028.1 (#183): una ruta rechazada por la Mesa no tiene precio, no es pendiente y no suma en el total.
+        // Una ruta rechazada por la Mesa no tiene precio, no es pendiente y no suma en el total.
         var tarifas = ordenadas.Select(l => l.Rechazada ? null : Costeo.Services.clsCosteoCotizacionService.PrecioTransporte(cotizacion, l)).ToList();
         var cotizables = ordenadas.Select((l, i) => (Ruta: l, Tarifa: tarifas[i])).Where(x => !x.Ruta.Rechazada).ToList();
         return new clsLicitacion(
             cotizacion.Folio,
             cotizacion.ClienteNombre,
             cotizacion.NitCliente,
-            // D5 (E2E 2026-10-16): en UTC, como la captura, el costeo y "Mis cotizaciones" (la base lo guarda con el -05:00 de Bogotá).
+            // En UTC, como la captura, el costeo y "Mis cotizaciones" (la base lo guarda con el -05:00 de Bogotá).
             cotizacion.Deadline?.ToUniversalTime(),
             cotizacion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
             cotizacion.MotivoEstadoCosteo,
@@ -794,16 +794,16 @@ public sealed class clsLicitacionService(
     }
 
     /// <summary>
-    /// HU-044.10 (#293, parte 1): el <c>origen_lectura</c> de la vista. <c>null</c> si la licitación no tiene archivo;
+    /// El <c>origen_lectura</c> de la vista. <c>null</c> si la licitación no tiene archivo;
     /// <see cref="clsOrigenLectura.AnalizarExcel"/> si el archivo no guardó un <c>origenLectura</c> (anterior al script 22); si no, el valor.
     /// </summary>
     public static string? OrigenLecturaVista(clsArchivoLicitacionResumen? archivo) =>
         archivo is null ? null : clsOrigenLectura.Normalizar(archivo.OrigenLectura);
 
     /// <summary>
-    /// OBS-1027-4 (#226): los errores de la línea de negocio para el reporte por fila, con la misma regla que el alta (sin política,
+    /// Los errores de la línea de negocio para el reporte por fila, con la misma regla que el alta (sin política,
     /// <see cref="clsMargenResolverService.LineaDesconocida"/> con la explicación de "Licitaciones"; inactiva,
-    /// <see cref="clsMargenResolverService.LineaInactiva"/>; #278: activa pero con un mapeo a Nexo fuera de las seis líneas de Nexo,
+    /// <see cref="clsMargenResolverService.LineaInactiva"/>; activa pero con un mapeo a Nexo fuera de las seis líneas de Nexo,
     /// <see cref="clsMargenResolverService.LineaNexoInvalida(Dominio.Margen.clsMargenPolitica)"/>): la del encabezado con <c>indice = null</c> y la de cada fila que trae la suya
     /// con su índice, en el campo <c>linea_negocio</c>. Devuelve también las líneas activas si hubo algún error (<c>null</c> si no). Una
     /// línea vacía no se revisa aquí: ya la reporta la validación de las filas.
@@ -853,7 +853,7 @@ public sealed class clsLicitacionService(
     /// <summary>Campo de los errores de la línea de negocio en el reporte de la licitación.</summary>
     public const string CampoLineaNegocio = "linea_negocio";
 
-    /// <summary>Vehículo de la ruta: el de su camión, o los de sus camiones separados por coma (HU-021).</summary>
+    /// <summary>Vehículo de la ruta: el de su camión, o los de sus camiones separados por coma.</summary>
     private static string? TipoVehiculo(clsLineaSolicitud ruta)
     {
         var tipos = ruta.VehiculosOrdenados.Select(v => v.TipoVehiculo).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();

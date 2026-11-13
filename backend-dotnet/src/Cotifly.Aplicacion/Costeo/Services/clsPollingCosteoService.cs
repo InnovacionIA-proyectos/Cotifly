@@ -37,7 +37,7 @@ public enum ResultadoConsultaCosteo
 }
 
 /// <summary>
-/// Polling del costeo en Nexo (HU-005.6, ADR-015 §4). El worker (<c>clsWorkerCosteoNexo</c>) lee la agenda con
+/// Polling del costeo en Nexo (ADR-015 §4). El worker (<c>clsWorkerCosteoNexo</c>) lee la agenda con
 /// <see cref="PendientesAsync"/> y procesa cada cotización con <see cref="ProcesarAsync"/> en su propio ámbito de DI.
 /// </summary>
 public interface IClsPollingCosteoService
@@ -52,7 +52,7 @@ public interface IClsPollingCosteoService
     Task<ResultadoConsultaCosteo> ProcesarAsync(clsConsultaCosteoPendiente pendiente, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Reparación de HU-013.14 (ADR-018 §17): agenda una relectura de las cotizaciones que quedaron en <c>entregada</c> sin precio, sin
+    /// Reparación (ADR-018 §17): agenda una relectura de las cotizaciones que quedaron en <c>entregada</c> sin precio, sin
     /// PDF, sin motivo y sin agenda (el resultado se registró antes de que Cotifly leyera el costeo). El worker la llama al arrancar;
     /// es idempotente. Devuelve cuántas agendó.
     /// </summary>
@@ -80,7 +80,7 @@ public sealed class clsPollingCosteoService(
     public const string HerramientaErrorConsulta = "costeo_nexo_consulta";
 
     /// <summary>
-    /// HU-036.4 (#208): evento de auditoría cuando Nexo trae otro costo para una cotización finalizada (el precio se conserva): lo
+    /// Evento de auditoría cuando Nexo trae otro costo para una cotización finalizada (el precio se conserva): lo
     /// guardado y lo de Nexo por camión, con su ruta.
     /// </summary>
     public const string HerramientaPrecioCongelado = "costeo_nexo_precio_congelado";
@@ -104,8 +104,8 @@ public sealed class clsPollingCosteoService(
             return ResultadoConsultaCosteo.NoReclamada;
         }
 
-        // HU-013.14: una entregada sin precio, o una con resultado cuyo costo no se leyó, se lee aunque sea terminal o haya pasado la
-        // edad máxima. Una perdida solo en Cotifly (HU-013.17) ya no se consulta.
+        // Una entregada sin precio, o una con resultado cuyo costo no se leyó, se lee aunque sea terminal o haya pasado la
+        // edad máxima. Una perdida solo en Cotifly no se consulta.
         // ADR-019 (Riesgo 2): "en Nexo" sin el id de la solicitud (migrada sin respaldo) nadie la puede consultar. Queda en error_envio
         // con el motivo SOLICITUD_NEXO_DESCONOCIDA: desde ahí funcionan el reintento, la re-solicitud y la perdida solo en Cotifly.
         if (!cotizacion.PerdidaSoloEnCotifly && cotizacion.SolicitudNexoDesconocida)
@@ -124,7 +124,7 @@ public sealed class clsPollingCosteoService(
 
         var relectura = cotizacion.RequiereRelecturaCosteo;
 
-        // HU-033 (#199): un resultado pendiente de sincronizar en una cotización que ya no se costea. Entregada (y con precio): solo se
+        // Un resultado pendiente de sincronizar en una cotización que ya no se costea. Entregada (y con precio): solo se
         // envía el resultado a Nexo. Descartada, vencida o sin envío: ya no se podrá enviar y queda solo en Cotifly.
         if (sincronizacion is not null && cotizacion.ResultadoPendienteDeSincronizar && !relectura && !cotizacion.SeConsultaEnNexo)
         {
@@ -139,18 +139,18 @@ public sealed class clsPollingCosteoService(
                 : ResultadoConsultaCosteo.SinCambio;
         }
 
-        // Decisión 10 (HU-021.9): una cotización que ya no se consulta (entregada en la misma consulta en que falló el envío de conexos)
+        // Una cotización que ya no se consulta (entregada en la misma consulta en que falló el envío de conexos)
         // vuelve a la agenda SOLO para reintentar ese envío: no se vuelve a costear ni se tocan montos ni la versión de negocio.
         if (!(cotizacion.SeConsultaEnNexo || relectura) && !cotizacion.PerdidaSoloEnCotifly && envioConexos is not null
             && cotizacion.UsuarioId is { } duenoConexos && cotizacion.CotizacionNexoId is not null
             && await envioConexos.TieneReintentosAsync(cotizacion, cancellationToken))
         {
             var reintento = await envioConexos.ReintentarAsync(cotizacion, duenoConexos, CancellationToken.None);
-            // #259 (invariante de agenda): no sale de la agenda mientras quede un conexo pendiente en una ruta cotizable.
+            // Invariante de agenda: no sale de la agenda mientras quede un conexo pendiente en una ruta cotizable.
             var sigue = reintento.PorReintentar > 0 || await ConexosPendientesAsync(cotizacion);
             if (sigue)
             {
-                // Con los conexos en espera (Nexo sin responder antes del POST) el reintento se espacia 5, 15 y 60 min (#136).
+                // Con los conexos en espera (Nexo sin responder antes del POST) el reintento se espacia 5, 15 y 60 min.
                 cotizacion.ProgramarRelecturaCosteo(ahora + (reintento.EsperaReintento ?? config.IntervaloReintentoConexos));
             }
             else
@@ -171,7 +171,7 @@ public sealed class clsPollingCosteoService(
 
         var anterior = cotizacion.EstadoCosteo;
         var version = cotizacion.VersionNegocio;
-        // HU-033 (#199): con un resultado pendiente de sincronizar se sigue esperando la entrega de la Mesa más allá de la edad máxima del
+        // Con un resultado pendiente de sincronizar se sigue esperando la entrega de la Mesa más allá de la edad máxima del
         // costeo, hasta CosteoNexo:EdadMaximaSincronizacionResultadoDias; pasado ese plazo el resultado queda solo en Cotifly.
         var esperaSincronizacion = sincronizacion is not null && cotizacion.ResultadoPendienteDeSincronizar
                                    && ahora - enviadaAt < config.EdadMaximaSincronizacionResultado;
@@ -226,13 +226,13 @@ public sealed class clsPollingCosteoService(
         if (consulta.EsFallo)
         {
             var fallos = cotizacion.CosteoConsultasFallidas + 1;
-            // La relectura sigue con espaciado aunque haya pasado la edad máxima, hasta CosteoNexo:MaximoFallosRelectura (HU-013.14).
+            // La relectura sigue con espaciado aunque haya pasado la edad máxima, hasta CosteoNexo:MaximoFallosRelectura.
             cotizacion.RegistrarFalloConsultaCosteo(relectura
                 ? ahora + clsAgendaPollingCosteo.Espera(ahora, enviadaAt, fallos, config)
                 : clsAgendaPollingCosteo.Siguiente(ahora, enviadaAt, fallos, config));
             if (sincronizacion is not null && cotizacion.ResultadoPendienteDeSincronizar && cotizacion.CosteoSiguienteConsultaAt is null)
             {
-                // HU-033: pasada la edad máxima del costeo, un resultado pendiente sigue esperando la entrega (Nexo caído no la detiene).
+                // Pasada la edad máxima del costeo, un resultado pendiente sigue esperando la entrega (Nexo caído no la detiene).
                 cotizacion.ProgramarRelecturaCosteo(ahora + config.IntervaloMaximo);
             }
 
@@ -275,28 +275,27 @@ public sealed class clsPollingCosteoService(
             return agotada ? ResultadoConsultaCosteo.Detenida : ResultadoConsultaCosteo.Error;
         }
 
-        // ADR-017 y HU-021: el estado y el costo se derivan por camión, el precio por ruta y el total en la solicitud. El precio se aplica
-        // aunque la cotización ya tenga resultado ganada/perdida (HU-013.14): solo el PDF y (HU-036.4, #208) la finalización congelan el
-        // precio.
-        // HU-021.8 (#135): con conexos pendientes de leer, la ruta pedida y los conexos que Nexo ya tenía antes del POST.
+        // ADR-017: el estado y el costo se derivan por camión, el precio por ruta y el total en la solicitud. El precio se aplica
+        // aunque la cotización ya tenga resultado ganada/perdida: solo el PDF y la finalización congelan el precio.
+        // Con conexos pendientes de leer, la ruta pedida y los conexos que Nexo ya tenía antes del POST.
         var pendientes = cotizacion.ConexosPendientesDeLeer
             ? await cotizaciones.ObtenerConexosPendientesNexoAsync(cotizacion.Folio, CancellationToken.None)
             : null;
         var motivoAntes = cotizacion.MotivoEstadoCosteo;
         var cambio = clsLecturaCosteo.AplicarFoto(cotizacion, consulta.Valor, ahora, config, precioCosteo, pendientes);
 
-        // HU-036.4 (#208): con la cotización finalizada el precio no cambia; lo que trajo Nexo se audita (una vez por aviso nuevo).
+        // Con la cotización finalizada el precio no cambia; lo que trajo Nexo se audita (una vez por aviso nuevo).
         var congelados = cotizacion.Finalizada && !string.Equals(motivoAntes, cotizacion.MotivoEstadoCosteo, StringComparison.Ordinal)
             ? clsPrecioCosteoService.CambiosConPrecioCongelado(cotizacion, consulta.Valor)
             : Array.Empty<clsCambioCosteoCongelado>();
 
-        // Una relectura pasada la edad máxima que sigue sin costeo se vence ahora, después de leerla (HU-013.14).
+        // Una relectura pasada la edad máxima que sigue sin costeo se vence ahora, después de leerla.
         if (relectura && cotizacion.EstadoCosteo == EstadoCosteo.PendienteCosteo && clsAgendaPollingCosteo.Vencida(ahora, enviadaAt, config))
         {
             cambio |= cotizacion.VencerPollingCosteo(
                 $"Nexo no costeó la solicitud en {config.EdadMaximaHoras} h: se dejó de consultar. Revísala con el equipo de Nexo o envía una versión nueva.");
         }
-        // HU-033 (#199): con el resultado pendiente, la agenda no se apaga por la edad máxima del costeo mientras Nexo no entregue; si Nexo
+        // Con el resultado pendiente, la agenda no se apaga por la edad máxima del costeo mientras Nexo no entregue; si Nexo
         // ya descartó o venció la solicitud, el resultado queda solo en Cotifly.
         if (sincronizacion is not null && cotizacion.ResultadoPendienteDeSincronizar)
         {
@@ -317,7 +316,7 @@ public sealed class clsPollingCosteoService(
             return ResultadoConsultaCosteo.Conflicto;
         }
 
-        // #181: lo que Nexo dice de la línea de cada camión (estado y motivo pendiente) queda a la vista en GET .../costeo, sin guardarse en
+        // Lo que Nexo dice de la línea de cada camión (estado y motivo pendiente) queda a la vista en GET .../costeo, sin guardarse en
         // la base. Solo con la foto ya guardada: así coincide con los camiones asociados que ve el comercial.
         situacionesNexo?.Registrar(cotizacion.Id, clsLecturaCosteo.SituacionesPorCamion(cotizacion, consulta.Valor));
 
@@ -331,7 +330,7 @@ public sealed class clsPollingCosteoService(
             await AuditarPrecioCongeladoAsync(cotizacion, congelados, (int)cronometro.ElapsedMilliseconds);
         }
 
-        // HU-033 (#199): la Mesa entregó y hay un resultado pendiente: se envía a Nexo una sola vez (escritura versionada aparte).
+        // La Mesa entregó y hay un resultado pendiente: se envía a Nexo una sola vez (escritura versionada aparte).
         if (sincronizacion is not null && cotizacion.ResultadoPendienteDeSincronizar && cotizacion.EstadoCosteo == EstadoCosteo.Entregada)
         {
             var versionSincronizacion = cotizacion.VersionNegocio;
@@ -343,7 +342,7 @@ public sealed class clsPollingCosteoService(
             }
         }
 
-        // Decisión 10 (HU-021.9): con la cotización de Nexo ya leída (y la línea del primer camión de cada ruta emparejada), los conexos
+        // Con la cotización de Nexo ya leída (y la línea del primer camión de cada ruta emparejada), los conexos
         // de las rutas que todavía no están en Nexo se envían una sola vez. Un fallo no frena el costeo: queda en el log.
         if (envioConexos is not null && consulta.Valor.Cotizacion is { } cotizacionNexo)
         {
@@ -352,8 +351,8 @@ public sealed class clsPollingCosteoService(
                 var envio = await envioConexos.EnviarPendientesAsync(cotizacion, cotizacionNexo, usuarioId, CancellationToken.None);
 
                 // Si el polling se detuvo en esta consulta (entregada, descartada o vencida) y quedaron conexos por reintentar, la
-                // cotización se vuelve a agendar solo para el envío (hasta CosteoNexo:MaximoReintentosConexos). #259 (invariante de
-                // agenda): también si queda alguno pendiente en una ruta cotizable, aunque este envío no lo cuente.
+                // cotización se vuelve a agendar solo para el envío (hasta CosteoNexo:MaximoReintentosConexos). Invariante de
+                // agenda: también si queda alguno pendiente en una ruta cotizable, aunque este envío no lo cuente.
                 if (cotizacion.CosteoSiguienteConsultaAt is null && (envio.PorReintentar > 0 || await ConexosPendientesAsync(cotizacion)))
                 {
                     cotizacion.ProgramarRelecturaCosteo(ahora + (envio.EsperaReintento ?? config.IntervaloReintentoConexos));
@@ -371,9 +370,9 @@ public sealed class clsPollingCosteoService(
     }
 
     /// <summary>
-    /// #259 (invariante de agenda): ¿quedan conexos con <c>estado_nexo = pendiente</c> en las rutas cotizables (las mismas que cuenta
-    /// finalizar, #228) de una cotización que el reintento de conexos sí procesa (con cotización de Nexo y dueño, no perdida solo en
-    /// Cotifly)? Con la variante 4a del envío eso converge siempre: el siguiente ciclo los envía o los deja fallido_definitivo.
+    /// Invariante de agenda: ¿quedan conexos con <c>estado_nexo = pendiente</c> en las rutas cotizables (las mismas que cuenta
+    /// finalizar) de una cotización que el reintento de conexos sí procesa (con cotización de Nexo y dueño, no perdida solo en
+    /// Cotifly)? Con la regla de destino del envío (ADR-031) eso converge siempre: el siguiente ciclo los envía o los deja fallido_definitivo.
     /// </summary>
     private async Task<bool> ConexosPendientesAsync(clsCotizacionSolicitud cotizacion)
     {
@@ -388,8 +387,8 @@ public sealed class clsPollingCosteoService(
     }
 
     /// <summary>
-    /// #259: el envío de conexos falló con una excepción en la consulta que detuvo el polling: si quedan pendientes, la cotización vuelve a la
-    /// agenda para el reintento (<c>ahora + CosteoNexo:IntervaloReintentoConexosMinutos</c>). Auditoría B3:
+    /// El envío de conexos falló con una excepción en la consulta que detuvo el polling: si quedan pendientes, la cotización vuelve a la
+    /// agenda para el reintento (<c>ahora + CosteoNexo:IntervaloReintentoConexosMinutos</c>):
     /// <list type="bullet">
     /// <item>Se agenda con la actualización condicional del repositorio (<see cref="IClsCotizacionRepository.ReencolarConsultaCosteoAsync"/>),
     /// no con la unidad de trabajo: no persiste lo que el envío dejó a medias en el seguimiento de cambios ni pisa una agenda o un reclamo
@@ -449,7 +448,7 @@ public sealed class clsPollingCosteoService(
         return await unidadTrabajo.GuardarCambiosSiVersionAsync(cotizacion.Id, version, CancellationToken.None);
     }
 
-    /// <summary>HU-033: por qué un resultado pendiente ya no se podrá enviar a Nexo, según el estado de costeo.</summary>
+    /// <summary>Por qué un resultado pendiente ya no se podrá enviar a Nexo, según el estado de costeo.</summary>
     private static string MotivoNoSincronizable(clsCotizacionSolicitud cotizacion) => cotizacion.EstadoCosteo switch
     {
         EstadoCosteo.Descartada => "Nexo descartó la solicitud: el resultado queda solo en Cotifly.",
@@ -457,7 +456,7 @@ public sealed class clsPollingCosteoService(
         _ => "La cotización ya no está en el costeo de Nexo: el resultado queda solo en Cotifly.",
     };
 
-    /// <summary>HU-036.4 (#208): el costo que trajo Nexo para una cotización finalizada, frente al guardado, por camión y ruta.</summary>
+    /// <summary>El costo que trajo Nexo para una cotización finalizada, frente al guardado, por camión y ruta.</summary>
     private Task AuditarPrecioCongeladoAsync(clsCotizacionSolicitud cotizacion, IReadOnlyList<clsCambioCosteoCongelado> cambios, int duracionMs) =>
         auditoria.RegistrarAsync(
             HerramientaPrecioCongelado,

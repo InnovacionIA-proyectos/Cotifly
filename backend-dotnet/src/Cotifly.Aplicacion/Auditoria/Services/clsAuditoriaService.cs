@@ -25,7 +25,7 @@ public sealed class clsAuditoriaService(IServiceScopeFactory ambitos, ILogger<cl
     public const string HerramientaEnviarCorreo = "enviar_correo";
     public const string HerramientaAjusteMargen = "registrar_ajuste_margen";
 
-    /// <summary>Herramientas que audita su propio caso de uso: el filtro del agente (#12) no debe auditarlas otra vez.</summary>
+    /// <summary>Herramientas que audita su propio caso de uso: el filtro del agente no debe auditarlas otra vez.</summary>
     public static readonly IReadOnlySet<string> HerramientasAuditadasPorCasoDeUso =
         new HashSet<string>(StringComparer.Ordinal) { HerramientaGenerarPdf, HerramientaEnviarCorreo, HerramientaAjusteMargen };
 

@@ -4,10 +4,9 @@ using System.Text;
 namespace Cotifly.Aplicacion.Agente.Services;
 
 /// <summary>
-/// Prompt de sistema del asistente por folio (HU-013.6, #102, ADR-018 §2b): el recurso embebido
+/// Prompt de sistema del asistente por folio (ADR-018 §2b): el recurso embebido
 /// <c>Agente/Recursos/prompt_asistente_folio.md</c> (el LLM propone, no calcula, no ve ni promete montos y pide confirmación) precedido
-/// de "# Contexto" con el nombre del comercial, la fecha de negocio y el folio de la conversación. No lleva ningún dato de dinero ni el
-/// estado del cotizador legado.
+/// de "# Contexto" con el nombre del comercial, la fecha de negocio y el folio de la conversación. No lleva ningún dato de dinero.
 /// </summary>
 public static class clsPromptAsistenteFolio
 {

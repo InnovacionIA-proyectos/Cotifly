@@ -31,7 +31,7 @@ public enum ResultadoConsultaCorreo
 }
 
 /// <summary>
-/// HU-033 (#199, ADR-023): consulta del estado de los correos en MailSender (<c>GET /api/v1/emails/{id}</c>). El worker
+/// Consulta del estado de los correos en MailSender (<c>GET /api/v1/emails/{id}</c>, ADR-023). El worker
 /// (<c>clsWorkerEstadoCorreos</c>, mismo patrón que el polling del costeo) lee la agenda con <see cref="PendientesAsync"/> y procesa cada
 /// correo con <see cref="ProcesarAsync"/> en su propio ámbito de DI.
 /// </summary>
@@ -93,7 +93,7 @@ public sealed class clsSeguimientoCorreosService(
             return ResultadoConsultaCorreo.SinCambio;
         }
 
-        // Auditoría #199: desde la última aceptación (envío o reintento), no desde la creación.
+        // La edad se cuenta desde la última aceptación (envío o reintento), no desde la creación.
         if (ahora - correo.InicioSeguimiento >= config.EdadMaxima)
         {
             correo.VencerConsulta(

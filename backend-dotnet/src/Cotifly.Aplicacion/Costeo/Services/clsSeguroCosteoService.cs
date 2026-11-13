@@ -14,8 +14,8 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// HU-045.2 (#264, ADR-032): incluir o quitar el seguro de la mercancía de una ruta en el costeo:
-/// <c>PUT /web/cotizaciones/{folio}/costeo/seguro</c> (decisión 3 de HU-045: endpoint propio con <c>If-Match</c>, como el margen).
+/// Incluir o quitar el seguro de la mercancía de una ruta en el costeo (ADR-032):
+/// <c>PUT /web/cotizaciones/{folio}/costeo/seguro</c> (endpoint propio con <c>If-Match</c>, como el margen).
 /// </summary>
 public interface IClsSeguroCosteoService
 {
@@ -120,7 +120,7 @@ public sealed class clsSeguroCosteoService(
             return (Detallar(invalido, cotizacion), false, false);
         }
 
-        // D1 de la validación: la ruta ya está como se pide (marcada, aunque sea sin valor de la mercancía, o sin seguro): no se llama al
+        // La ruta ya está como se pide (marcada, aunque sea sin valor de la mercancía, o sin seguro): no se llama al
         // dominio, no se lee la tasa, no se invalida el PDF ni sube la versión.
         if (incluir == ruta.IncluyeSeguro && (incluir || (ruta.TasaSeguroAplicada is null && ruta.CostoSeguro is null)))
         {

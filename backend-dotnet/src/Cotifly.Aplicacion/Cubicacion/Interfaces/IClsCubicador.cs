@@ -4,9 +4,8 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Aplicacion.Cubicacion.Interfaces;
 
 /// <summary>
-/// Puerto del cubicador (motor de selección de vehículos; HU-021.5, #133, adaptado al contrato de HU-023.1, #156). Es la única vía de
-/// Cotifly al cubicador: la cubicación rápida que pasaba por Nexo (<c>POST /api/cubicacion</c>) se retiró en HU-023.2 (#157), y
-/// "Calcular cubicaje" también usa este puerto. Habla directo con el cubicador, autenticado con <c>Authorization: Bearer {Cubicador:ApiKey}</c>. La implementación HTTP es <c>clsCubicadorHttp</c>; sin
+/// Puerto del cubicador (motor de selección de vehículos). Es la única vía de
+/// Cotifly al cubicador: la captura y "Calcular cubicaje" usan este puerto. Habla directo con el cubicador, autenticado con <c>Authorization: Bearer {Cubicador:ApiKey}</c>. La implementación HTTP es <c>clsCubicadorHttp</c>; sin
 /// <c>Cubicador:UrlBase</c>, Infraestructura registra la versión "no disponible" (<see cref="EstaConfigurado"/> = <c>false</c>). Nunca
 /// lanza por el cubicador: todo vía <see cref="clsResultado{TValor}"/>.
 /// </summary>
@@ -46,7 +45,7 @@ public interface IClsCubicador
     Task<clsResultado<IReadOnlyList<clsTipoCarroceriaCubicador>>> ListarTiposCarroceriaAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// <c>GET /tipos-vehiculo</c> (con caché en memoria; petición P1 al cubicador: mientras no exista responde
+    /// <c>GET /tipos-vehiculo</c> (con caché en memoria; si el cubicador no lo expone responde
     /// <c>CUBICADOR_NO_DISPONIBLE</c>).
     /// </summary>
     Task<clsResultado<IReadOnlyList<clsTipoVehiculoCubicador>>> ListarTiposVehiculoAsync(CancellationToken cancellationToken = default);

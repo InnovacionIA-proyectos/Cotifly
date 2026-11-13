@@ -7,11 +7,11 @@ using System.Text.Json.Nodes;
 namespace Cotifly.Aplicacion.Comun;
 
 /// <summary>
-/// Huella (SHA-256 en hexadecimal, 64 caracteres) del cuerpo de una petición con <c>Idempotency-Key</c> (#191). La comparten la captura,
+/// Huella (SHA-256 en hexadecimal, 64 caracteres) del cuerpo de una petición con <c>Idempotency-Key</c>. La comparten la captura,
 /// los conexos, la re-solicitud y la edición: la misma clave con otra huella es <c>IDEMPOTENCY_KEY_REUTILIZADA</c>.
 /// </summary>
 /// <remarks>
-/// Compara POR VALOR los números (deuda del PR #195): <c>1.5</c>, <c>1.50</c> y <c>1.500</c> dan la misma huella, así un reintento que el
+/// Compara POR VALOR los números: <c>1.5</c>, <c>1.50</c> y <c>1.500</c> dan la misma huella, así un reintento que el
 /// cliente vuelve a serializar con otra escala de decimales se reconoce como la misma petición y no se ejecuta otra vez. El resto del
 /// cuerpo se compara tal cual (JSON con las convenciones web, en el orden de las propiedades del DTO).
 /// </remarks>

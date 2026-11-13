@@ -24,7 +24,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// HU-028 (#186, ADR-021): el comercial edita la solicitud. <c>GET /web/cotizaciones/{folio}/solicitud</c> (el modelo editable) y
+/// El comercial edita la solicitud (ADR-021). <c>GET /web/cotizaciones/{folio}/solicitud</c> (el modelo editable) y
 /// <c>PUT /web/cotizaciones/{folio}/solicitud</c> (la edición, con <c>If-Match</c> e <c>Idempotency-Key</c>).
 /// </summary>
 public interface IClsEdicionSolicitudService
@@ -56,7 +56,7 @@ public interface IClsEdicionSolicitudService
 /// catálogos, TRM y la cubicación de las rutas que cambian. Un 400, un 409 o un 503 no cambian nada.</item>
 /// <item>Solo se vuelve a cubicar una ruta nueva o una cuya carga (peso, mercancías) o clase de viaje cambió
 /// (<see cref="clsReglaRecubicacion"/>); las demás conservan sus camiones vigentes, también el vehículo que la Mesa de Costeo haya
-/// cambiado en Nexo (D2: la Mesa manda).</item>
+/// cambiado en Nexo (la Mesa manda).</item>
 /// <item><b>Reemplazo</b>: se reserva la versión (con la instantánea del costeo anterior en la auditoría, sin <c>ThreadId</c>), se rechaza
 /// la solicitud anterior en Nexo y solo si quedó sin vida (204, 409 ya descartada o 404) se aplica la edición y se captura de nuevo. Si el
 /// rechazo falla, no se captura (nunca quedan dos solicitudes vivas en Nexo) y se responde 503 (o 403 sin permiso).</item>
@@ -83,7 +83,7 @@ public sealed class clsEdicionSolicitudService(
     IOptions<clsOpcionesCaptura>? opcionesCaptura = null,
     IClsTarifaSeguroRepository? tarifasSeguro = null) : IClsEdicionSolicitudService
 {
-    /// <summary>HU-032 (#197): ¿el vehículo elegido cuenta? (<c>Captura:AceptarVehiculoCliente</c>, encendida por defecto).</summary>
+    /// <summary>¿El vehículo elegido cuenta? (<c>Captura:AceptarVehiculoCliente</c>, encendida por defecto).</summary>
     private bool AceptaVehiculo => opcionesCaptura?.Value.AceptarVehiculoCliente ?? true;
 
     /// <summary>Herramienta de la auditoría (<c>EventosHerramienta.herramienta</c>).</summary>
@@ -93,7 +93,7 @@ public sealed class clsEdicionSolicitudService(
     public const string OperacionIdempotencia = "editar_solicitud";
 
     /// <summary>
-    /// HU-045.2 (#264): la tasa vigente del seguro, solo si alguna ruta de <paramref name="original"/> lo incluye (la edición puede cambiar su
+    /// La tasa vigente del seguro, solo si alguna ruta de <paramref name="original"/> lo incluye (la edición puede cambiar su
     /// valor de la mercancía); si no, o sin repositorio, <c>null</c> (se conserva la tasa de la ruta). Se lee una vez, ANTES de reservar y
     /// de rechazar la solicitud anterior en Nexo, y nunca falla: si la lectura falla, <c>null</c> (con un aviso en el log), para no romper
     /// la edición a mitad del flujo.
@@ -278,7 +278,7 @@ public sealed class clsEdicionSolicitudService(
                 cotizacion.VersionNegocio.ToString(CultureInfo.InvariantCulture), Creada: false);
         }
 
-        // HU-045.2 (#264, B1 de la auditoría): la tasa del seguro antes de reservar y de rechazar en Nexo.
+        // La tasa del seguro antes de reservar y de rechazar en Nexo.
         p = p with { TasaSeguro = await TasaSeguroAsync(cotizacion, cancellationToken) };
         var reserva = Reserva(entradaAuditoria, clsReSolicitudCosteoService.Instantanea(cotizacion), cronometro);
         return modo.Valor switch
@@ -303,7 +303,7 @@ public sealed class clsEdicionSolicitudService(
         clsMargenPolitica? Politica,
         IReadOnlyList<int> Replanificadas)
     {
-        /// <summary>HU-045.2 (#264): la tasa vigente del seguro leída antes de escribir (<see cref="TasaSeguroAsync"/>).</summary>
+        /// <summary>La tasa vigente del seguro leída antes de escribir (<see cref="TasaSeguroAsync"/>).</summary>
         public decimal? TasaSeguro { get; init; }
     }
 
@@ -377,7 +377,7 @@ public sealed class clsEdicionSolicitudService(
                 ordenAnterior = Math.Max(ordenAnterior, guardada.Orden);
                 if (guardada.LineaNegocioId is null)
                 {
-                    // Ruta anterior a HU-021 sin línea de negocio guardada: la línea no se edita, así que no hay con qué enviarla.
+                    // Ruta sin línea de negocio guardada: la línea no se edita, así que no hay con qué enviarla.
                     errores.Add(new clsErrorFilaLicitacion(i, null, "linea_negocio", clsCodigosLineaSolicitud.CampoRequerido,
                         $"La ruta {guardada.Orden} no tiene línea de negocio guardada y la línea no se edita: crea una solicitud nueva para esta ruta."));
                     rutasCaptura.Add(ruta);
@@ -432,15 +432,15 @@ public sealed class clsEdicionSolicitudService(
             Notas = entrada.Notas,
         };
         var moneda = (Limpio(entrada.Moneda) ?? cotizacion.Moneda ?? clsCotizacionSolicitud.MonedaPesos).ToUpperInvariant();
-        // HU-032 (#197): la edición conserva el vehículo elegido de cada ruta (antes lo borraba); con la bandera apagada se ignora.
+        // La edición conserva el vehículo elegido de cada ruta; con la bandera apagada se ignora.
         var sinVehiculo = clsEnvioCosteoService.SinVehiculo(rutasCaptura, logger, AceptaVehiculo);
         var captura = new clsEntradaCaptura(
             cotizacion.NitCliente, cotizacion.ClienteNombre, sinVehiculo.FirstOrDefault(r => r?.LineaNegocio is not null)?.LineaNegocio ?? "-",
             encabezado, sinVehiculo, entrada.Moneda);
         var previos = clsEnvioCosteoService.ErroresFormulario(captura, sinVehiculo).Concat(errores).ToList();
 
-        // OBS-1021B-1 (E2E 2026-10-21): "¿cambió algo?" ANTES de los catálogos de Nexo. El mismo cuerpo del GET responde sin_cambios sin
-        // consultar Nexo (antes, con Nexo caído, respondía 503). Solo con el cuerpo crudo bien formado (sin errores de formulario, de la
+        // "¿Cambió algo?" ANTES de los catálogos de Nexo. El mismo cuerpo del GET responde sin_cambios sin
+        // consultar Nexo (aunque Nexo esté caído). Solo con el cuerpo crudo bien formado (sin errores de formulario, de la
         // línea ni de conexos) y por VALOR contra lo guardado, que ya se validó al capturarlo: la canonización de Nexo (2s3 → 2S3) se
         // reemplaza por una comparación equivalente sin catálogo (mayúsculas en los códigos, MismoCodigo en el vehículo). Si algo difiere,
         // no hay forma de saberlo sin catálogo (un municipio solo por nombre, un alias, un conexo agregado en Nexo) o la línea de negocio
@@ -482,7 +482,7 @@ public sealed class clsEdicionSolicitudService(
             return new clsEdicionPreparada(encabezado, [], true, null, null, []);
         }
 
-        // HU-028.1 (#183, decisión del 2026-10-20): los camiones que rechazó la Mesa de Costeo no viajan salvo reincluir_rechazados. Si con la
+        // Los camiones que rechazó la Mesa de Costeo no viajan salvo reincluir_rechazados. Si con la
         // edición ninguna ruta manda líneas a Nexo (todas con sus camiones rechazados, sin reincluirlos ni cambiar su carga) no hay nada que
         // enviar: 409 SIN_RUTAS_COTIZABLES antes de escribir (y antes de fijar la TRM o llamar al cubicador).
         var algunaViaja = false;
@@ -524,7 +524,7 @@ public sealed class clsEdicionSolicitudService(
             var validada = validadas.Lineas[i];
             var guardada = entradas[i]!.LineaSolicitudId is { } id ? guardadas[id] : null;
             var rutaId = modo == ModoEdicionSolicitud.NuevaVersion || guardada is null ? Guid.NewGuid() : guardada.Id;
-            // HU-028.1 (#183): los camiones rechazados por la Mesa se conservan, rechazados y sin viajar, salvo reincluir_rechazados (entonces
+            // Los camiones rechazados por la Mesa se conservan, rechazados y sin viajar, salvo reincluir_rechazados (entonces
             // viajan sin el rechazo). Una ruta que se vuelve a cubicar estrena camiones: el rechazo de los anteriores no aplica.
             var vigente = guardada is not null && guardada.VehiculosVigentes.Count > 0 && !Replanifica(guardada, validada.Linea)
                 ? PlanVigente(guardada, entradas[i]!.ReincluirRechazados)
@@ -556,7 +556,7 @@ public sealed class clsEdicionSolicitudService(
     }
 
     /// <summary>
-    /// OBS-1021B-1: ¿el cuerpo crudo (sin pasar por los catálogos de Nexo) deja todo como está? Exige que cada ruta esté bien formada
+    /// ¿El cuerpo crudo (sin pasar por los catálogos de Nexo) deja todo como está? Exige que cada ruta esté bien formada
     /// (<see cref="clsLineaSolicitudCosteo.ErroresCaptura"/> y <see cref="clsCapturaRutasService.ErroresConexos"/> vacíos), que su línea
     /// de negocio siga activa y que <see cref="MismoContenido"/> lo confirme sin catálogo de conexos (un conexo agregado en Nexo, guardado
     /// con el id de su fila, no coincide y se va por la validación completa). Nunca consulta Nexo.
@@ -581,8 +581,8 @@ public sealed class clsEdicionSolicitudService(
     }
 
     /// <summary>
-    /// HU-032 (#197, B3; decisión del usuario del 2026-10-21): en la edición <c>VEHICULO_REQUERIDO</c> solo aplica a una ruta nueva o que
-    /// CAMBIA. Una ruta guardada que no cambia (p. ej. una de Cupo anterior a HU-032 que solo trae el peso) no exige el vehículo: el mismo
+    /// En la edición <c>VEHICULO_REQUERIDO</c> solo aplica a una ruta nueva o que
+    /// CAMBIA. Una ruta guardada que no cambia (p. ej. una de Cupo sin vehículo elegido que solo trae el peso) no exige el vehículo: el mismo
     /// cuerpo del GET da <c>sin_cambios</c>. "Cambia" es lo mismo que obliga a volver a planificar sus camiones (<see cref="Replanifica"/>:
     /// el peso, la clase de viaje o las mercancías por valor, como <c>sin_cambios</c>, y el vehículo elegido si sus camiones dependen de
     /// él). Lo demás (origen, destino, horas, valores, tara, conexos, <c>reincluir_rechazados</c>) no toca el vehículo y no lo exige.
@@ -602,7 +602,7 @@ public sealed class clsEdicionSolicitudService(
 
     /// <summary>
     /// ¿Hay que volver a planificar los camiones de la ruta guardada? Si cambió lo que recibe el cubicador (<see cref="clsReglaRecubicacion"/>)
-    /// o, HU-032 (#197), el vehículo elegido cuando sus camiones dependen de él (la ruta no la asignó el cubicador): en una ruta sin
+    /// o el vehículo elegido cuando sus camiones dependen de él (la ruta no la asignó el cubicador): en una ruta sin
     /// mercancías cubicables cambiar solo el vehículo es un cambio que viaja (reemplazo en Nexo o <c>-vN</c>, según el modo).
     /// </summary>
     private bool Replanifica(clsLineaSolicitud guardada, clsLineaSolicitudCosteo nueva) =>
@@ -689,9 +689,9 @@ public sealed class clsEdicionSolicitudService(
     /// <summary>
     /// Versión nueva (<c>-vN</c>): reserva la versión de la original (la original no cambia nada más ni se rechaza en Nexo: es la que tiene
     /// el cliente), crea la versión con las rutas editadas y el margen negociado de las que conserva, y la envía.
-    /// Endurecimiento B (#199): la reserva va DENTRO del candado del folio <c>-vN</c> y en su misma transacción que el alta de la versión: si
+    /// La reserva va DENTRO del candado del folio <c>-vN</c> y en su misma transacción que el alta de la versión: si
     /// el candado no se obtiene (<c>SERVICIO_OCUPADO</c>) o la versión no se crea, la original queda como estaba (su <c>versionNegocio</c>
-    /// y su <c>If-Match</c> siguen valiendo). Antes se reservaba primero y un <c>SERVICIO_OCUPADO</c> dejaba la original con la versión subida.
+    /// y su <c>If-Match</c> siguen valiendo).
     /// </summary>
     private async Task<clsResultado<clsEdicionAplicada>> VersionNuevaAsync(
         clsCotizacionSolicitud original, Guid usuarioId, clsEdicionPreparada p, int versionEsperada, clsEventoHerramienta? reserva,
@@ -716,7 +716,7 @@ public sealed class clsEdicionSolicitudService(
             var nueva = version.Valor;
             nueva.RegistrarCaptura(p.Encabezado, [.. p.Rutas.Select(r => r.Ruta)]);
             nueva.CopiarMargenesNegociadosDe(original, anteriorDe);
-            // HU-045.2 (#264): el seguro de la mercancía de cada ruta que se conserva (recalculado si cambió su valor de la mercancía).
+            // El seguro de la mercancía de cada ruta que se conserva (recalculado si cambió su valor de la mercancía).
             nueva.CopiarSegurosDe(original, anteriorDe, tasaSeguro);
             cotizaciones.Agregar(nueva);
             await unidadTrabajo.GuardarCambiosAsync(ct);
@@ -743,7 +743,7 @@ public sealed class clsEdicionSolicitudService(
     private async Task<(clsResultadoEdicion Resultado, IReadOnlyList<clsAvisoEdicion> Avisos)?> AplicarYGuardarAsync(
         clsCotizacionSolicitud cotizacion, Guid usuarioId, clsEdicionPreparada p, int versionEsperada)
     {
-        // HU-045.2 (#264, decisión 5): si cambia el valor de la mercancía de una ruta con seguro, el seguro toma la tasa vigente.
+        // Si cambia el valor de la mercancía de una ruta con seguro, el seguro toma la tasa vigente.
         var edicion = new clsEdicionSolicitud(p.Encabezado, p.Rutas, p.Moneda?.Moneda, p.Moneda?.TrmAplicada ?? 0m)
         {
             TasaSeguroVigente = p.TasaSeguro,
@@ -770,7 +770,7 @@ public sealed class clsEdicionSolicitudService(
     }
 
     /// <summary>
-    /// Endurecimiento B (#199): la reserva de la original para una versión nueva, DENTRO de la transacción del candado del folio
+    /// La reserva de la original para una versión nueva, DENTRO de la transacción del candado del folio
     /// (<see cref="IClsGeneradorFolioService.CrearNuevaVersionAsync{TValor}"/>): bloquea la fila y compara la versión; si coincide, la sube y
     /// deja la instantánea para el guardado de la versión nueva (misma transacción: o queda todo o nada). <c>false</c> si otra escritura ganó.
     /// </summary>
@@ -806,7 +806,7 @@ public sealed class clsEdicionSolicitudService(
 
     /// <summary>
     /// El rechazo de la solicitud anterior falló: <c>NEXO_SIN_PERMISO</c> (403) o <c>NEXO_NO_DISPONIBLE</c> (503), siempre con
-    /// <c>detalle.motivo = RECHAZO_NEXO_FALLIDO</c>. Endurecimiento B (#199): sin el <see cref="clsErrorDominio.Detalle"/> de Nexo, que
+    /// <c>detalle.motivo = RECHAZO_NEXO_FALLIDO</c>. Sin el <see cref="clsErrorDominio.Detalle"/> de Nexo, que
     /// <c>clsErrorNegocioWeb</c> publicaría como <c>detalle.motivo</c> encima del motivo de Cotifly (lo técnico queda en el log).
     /// </summary>
     private static clsErrorDominio RechazoFallido(clsCotizacionSolicitud cotizacion, string anterior, clsErrorDominio error)
@@ -828,7 +828,7 @@ public sealed class clsEdicionSolicitudService(
     // ------------------------------------------------------------------ Lectura y respuesta
 
     /// <summary>
-    /// La respuesta de la edición. HU-028.1 (#183, hallazgo B3 de la auditoría): si la edición dejó fuera del envío camiones rechazados por la
+    /// La respuesta de la edición. Si la edición dejó fuera del envío camiones rechazados por la
     /// Mesa de Costeo, lo dice en <c>aviso_rechazos</c> (en la respuesta y en <c>cotizacion</c>, como la re-solicitud) y en el aviso
     /// <c>RECHAZADOS_OMITIDOS</c>. Una edición <c>sin_cambios</c> no envía nada: no lleva ese aviso.
     /// </summary>
@@ -840,7 +840,7 @@ public sealed class clsEdicionSolicitudService(
         var avisoRechazos = sinCambios ? null : clsReSolicitudCosteoService.AvisoRechazos(resultante, modo == ModoEdicionSolicitud.NuevaVersion);
         IReadOnlyList<clsAvisoEdicion> todos = avisoRechazos is null ? avisos : [.. avisos, new clsAvisoEdicion(clsAvisoEdicion.RechazadosOmitidos, avisoRechazos)];
         var resumen = await misCotizaciones.ResumirAsync(resultante, CancellationToken.None);
-        // HU-032 (#197): como la captura, la respuesta trae por ruta el resultado del cubicador y los avisos del vehículo (cotizacion.cubicacion).
+        // Como la captura, la respuesta trae por ruta el resultado del cubicador y los avisos del vehículo (cotizacion.cubicacion).
         return new(clsCodigoEnum.ACodigo(modo), resultante.Folio, origen.Folio, sinCambios,
             resumen with { AvisoRechazos = avisoRechazos, Cubicacion = clsCubicacionRutaResumen.De(resultante) }, todos,
             replanificadas, agregadas, quitadas, reemplazada)
@@ -855,7 +855,7 @@ public sealed class clsEdicionSolicitudService(
         var avisos = new List<clsAvisoEdicion>();
         if (modo == ModoEdicionSolicitud.NuevaVersion)
         {
-            // HU-036.3 (#207): la finalizada (precio aceptado) que todavía no se entregó también se edita en una versión nueva.
+            // La finalizada (precio aceptado) que todavía no se entregó también se edita en una versión nueva.
             avisos.Add(new clsAvisoEdicion(clsAvisoEdicion.CreaVersionNueva, cotizacion.EntregadaAlCliente
                 ? "La cotización ya se entregó al cliente o tiene resultado: la edición crea una versión nueva y la original no cambia."
                 : "La cotización ya está finalizada: la edición crea una versión nueva y la original no cambia."));
@@ -886,7 +886,7 @@ public sealed class clsEdicionSolicitudService(
     }
 
     /// <summary>
-    /// La ruta como la captura el comercial (<c>RutaEditable</c>). La comparte el detalle por folio (HU-027.1, #179), que pasa
+    /// La ruta como la captura el comercial (<c>RutaEditable</c>). La comparte el detalle por folio, que pasa
     /// <paramref name="catalogo"/> vacío (no consulta Nexo): los conexos salen con el id del catálogo guardado (script 03) o el guardado.
     /// </summary>
     internal static clsRutaEditable Editable(
@@ -925,7 +925,7 @@ public sealed class clsEdicionSolicitudService(
             r.MotivoRechazo)
         {
             PesoConTaraKg = r.PesoConTaraKg,
-            // HU-032 (#197): el vehículo elegido (no el de los camiones), para reenviarlo tal cual en el PUT.
+            // El vehículo elegido (no el de los camiones), para reenviarlo tal cual en el PUT.
             TipoVehiculo = r.VehiculoElegido.TipoVehiculo,
             Carroceria = r.VehiculoElegido.Carroceria,
         };
@@ -944,7 +944,7 @@ public sealed class clsEdicionSolicitudService(
             .Select(g => g.Count() == 1 ? g.First() : g.First() with { Cantidad = g.Sum(c => c.Cantidad) })];
 
     /// <summary>
-    /// Los conexos guardados con el id del catálogo de Nexo de hoy (un conexo agregado en Nexo está guardado con el id de la fila de la
+    /// Los conexos guardados con el id del catálogo vigente de Nexo (un conexo agregado en Nexo está guardado con el id de la fila de la
     /// cotización de Nexo: se resuelve por id o por nombre). Sin catálogo, los ids guardados (la edición los valida al guardar).
     /// </summary>
     private async Task<IReadOnlyDictionary<string, clsCostoConexoNexo>> ConexosDelCatalogoAsync(
@@ -978,9 +978,9 @@ public sealed class clsEdicionSolicitudService(
     }
 
     /// <summary>
-    /// Los camiones vigentes de la ruta (los descartados en Nexo no, salvo que lo estén todos) y su resultado del cubicador. HU-028.1 (#183,
-    /// decisión del 2026-10-20): los rechazados por la Mesa van con su rechazo (<see cref="clsCamionPlaneado.Rechazo"/>): en la <c>-vN</c>
-    /// nacen rechazados y no viajan; con <paramref name="reincluirRechazados"/> van sin él y viajan (D2: con el vehículo que tengan). En sitio
+    /// Los camiones vigentes de la ruta (los descartados en Nexo no, salvo que lo estén todos) y su resultado del cubicador.
+    /// Los rechazados por la Mesa van con su rechazo (<see cref="clsCamionPlaneado.Rechazo"/>): en la <c>-vN</c>
+    /// nacen rechazados y no viajan; con <paramref name="reincluirRechazados"/> van sin él y viajan (con el vehículo que tengan). En sitio
     /// y en el reemplazo los camiones se conservan en la ruta guardada y este plan no se usa para crearlos.
     /// </summary>
     private static clsPlanRuta PlanVigente(clsLineaSolicitud ruta, bool reincluirRechazados) =>
@@ -990,10 +990,10 @@ public sealed class clsEdicionSolicitudService(
             ruta.ResultadoCubicacion is { } resultado
                 ? new clsCubicacionRuta(ruta.IdRecomendacion, resultado, ruta.MotivoSinSeleccion, ruta.Condicionada, ruta.AvisosCubicacion)
                 : null,
-            // HU-032 (#197): los avisos del vehículo de la ruta siguen con sus camiones.
+            // Los avisos del vehículo de la ruta siguen con sus camiones.
             AvisosVehiculo(ruta));
 
-    /// <summary>HU-032 (#197): los avisos del vehículo guardados con la ruta (<see cref="clsAvisosVehiculo.Codigos"/>), o <c>null</c>.</summary>
+    /// <summary>Los avisos del vehículo guardados con la ruta (<see cref="clsAvisosVehiculo.Codigos"/>), o <c>null</c>.</summary>
     internal static IReadOnlyList<clsAdvertenciaCubicador>? AvisosVehiculo(clsLineaSolicitud ruta) =>
         ruta.AvisosCubicacion?.Advertencias?.Where(a => a.Codigo is not null && clsAvisosVehiculo.Codigos.Contains(a.Codigo)).ToList() is { Count: > 0 } avisos
             ? avisos
@@ -1002,10 +1002,10 @@ public sealed class clsEdicionSolicitudService(
     /// <summary>
     /// ¿La edición deja todo como está? Compara el encabezado, la moneda y, ruta por ruta y en orden, la misma ruta guardada, los municipios
     /// por id, las condiciones, las horas, los valores, el peso, las mercancías (en orden, por código, cantidad, medidas y peso) y los
-    /// conexos (id y cantidad, sin importar el orden). Los nombres copiados de los catálogos no cuentan. HU-028.1 (#183): una ruta con camiones
+    /// conexos (id y cantidad, sin importar el orden). Los nombres copiados de los catálogos no cuentan. Una ruta con camiones
     /// rechazados y <c>reincluir_rechazados</c> sí es un cambio.
     /// <para>
-    /// D-1019B-1 (E2E 2026-10-19): la comparación es por VALOR, nunca por el texto. Un <c>decimal</c> leído de SQL Server conserva la escala
+    /// La comparación es por VALOR, nunca por el texto. Un <c>decimal</c> leído de SQL Server conserva la escala
     /// de la columna (<c>36666.60</c>) y el que llega en el JSON reenviado no (<c>36666.6</c>): son iguales con <c>==</c> pero no como texto.
     /// El <c>deadline</c> se compara como instante (el cuerpo puede traerlo en otra zona horaria), los códigos sin mayúsculas ni espacios, un
     /// texto vacío como <c>null</c> y la moneda guardada vacía como pesos (la que muestra el GET).
@@ -1045,14 +1045,14 @@ public sealed class clsEdicionSolicitudService(
                 return false;
             }
 
-            // HU-032 (#197): el vehículo elegido cuenta si los camiones dependen de él (la ruta no la asignó el cubicador). Se compara con el
-            // ELEGIDO guardado, no con el del camión: un cambio de la Mesa de Costeo en Nexo (D2) no es un cambio del comercial.
+            // El vehículo elegido cuenta si los camiones dependen de él (la ruta no la asignó el cubicador). Se compara con el
+            // ELEGIDO guardado, no con el del camión: un cambio de la Mesa de Costeo en Nexo no es un cambio del comercial.
             if (aceptaVehiculo && guardada.UsaVehiculoElegido && !clsReglaRecubicacion.MismoVehiculo(guardada.ALineaConElegido(), nueva))
             {
                 return false;
             }
 
-            // HU-028.1 (#183): pedir que la Mesa reconsidere camiones rechazados es un cambio (vuelven a viajar). Que la ruta tenga rechazados
+            // Pedir que la Mesa reconsidere camiones rechazados es un cambio (vuelven a viajar). Que la ruta tenga rechazados
             // sin pedirlo no lo es: la misma solicitud reenviada no dispara nada.
             if (entradas[i]!.ReincluirRechazados && guardada.CamionesRechazados > 0)
             {
@@ -1139,7 +1139,7 @@ public sealed class clsEdicionSolicitudService(
         };
     }
 
-    /// <summary>Evento de la reserva (fase <c>reservada</c>) con la instantánea del costeo anterior; sin <c>ThreadId</c> (#102).</summary>
+    /// <summary>Evento de la reserva (fase <c>reservada</c>) con la instantánea del costeo anterior; sin <c>ThreadId</c>.</summary>
     private static clsEventoHerramienta? Reserva(object entradaAuditoria, object instantanea, Stopwatch cronometro)
     {
         var evento = clsEventoHerramienta.Registrar(

@@ -1,7 +1,7 @@
 namespace Cotifly.Aplicacion.Cotizaciones.DTOs;
 
 /// <summary>
-/// HU-018.1 (#155, parte C): lo que escribe el Excel de una cotización (<c>GET /web/cotizaciones/{folio}/excel</c>). Todo lo interno
+/// Lo que escribe el Excel de una cotización (<c>GET /web/cotizaciones/{folio}/excel</c>). Todo lo interno
 /// (costos de Nexo y márgenes) va SOLO en las propiedades <c>Interno</c>: <see cref="SinCostos"/> las pone en <c>null</c> para el gerente
 /// y el director en solo lectura, y el exportador no escribe ninguna columna de costo ni de margen sin ellas (con el margen y el precio se
 /// deduce el costo). La prueba de arquitectura <c>clsCostoBrutoSinFugasTests</c> exige que ningún campo <c>Costo*</c> ni <c>Margen*</c>
@@ -16,8 +16,8 @@ namespace Cotifly.Aplicacion.Cotizaciones.DTOs;
 /// <param name="TrmAplicada">TRM fijada al crear (0 en COP).</param>
 /// <param name="EstadoCosteo">Estado del costeo de la cabecera.</param>
 /// <param name="Resultado"><c>ganada</c>, <c>perdida</c> o <c>null</c>.</param>
-/// <param name="FinalizadaAt">Cuándo se finalizó (HU-036): el precio quedó congelado.</param>
-/// <param name="PrecioCongelado">El precio no cambia con el costeo de Nexo (cotización finalizada o con PDF, HU-036).</param>
+/// <param name="FinalizadaAt">Cuándo se finalizó: el precio quedó congelado.</param>
+/// <param name="PrecioCongelado">El precio no cambia con el costeo de Nexo (cotización finalizada o con PDF).</param>
 /// <param name="GeneradoEn">Momento de la exportación (UTC).</param>
 /// <param name="SoloLectura">Versión del gerente o el director (sin costos ni márgenes).</param>
 /// <param name="Rutas">Las rutas en su orden.</param>
@@ -53,7 +53,7 @@ public sealed record clsExcelCotizacion(
 /// <param name="Origen">Origen (nombre copiado de la ruta).</param>
 /// <param name="Destino">Destino.</param>
 /// <param name="Estado">Estado del costeo de la ruta, legible.</param>
-/// <param name="Rechazada">La Mesa de Costeo la rechazó: sin precio, sin conexos y no suma (HU-028.1).</param>
+/// <param name="Rechazada">La Mesa de Costeo la rechazó: sin precio, sin conexos y no suma.</param>
 /// <param name="MotivoRechazo">Por qué la rechazó la Mesa (texto de Nexo).</param>
 /// <param name="PesoKg">Peso total declarado de la ruta.</param>
 /// <param name="CamionesQueCuentan">Camiones que cuentan en el precio (sin descartados ni rechazados).</param>
@@ -82,12 +82,12 @@ public sealed record clsExcelRuta(
     clsExcelInternoRuta? Interno)
 {
     /// <summary>
-    /// HU-045.3 (#265): el seguro de la mercancía de la ruta en la moneda (venta sin margen, no costo de Nexo: lo ven todos); <c>null</c> sin
+    /// El seguro de la mercancía de la ruta en la moneda (venta sin margen, no costo de Nexo: lo ven todos); <c>null</c> sin
     /// seguro, sin valor calculado o con la ruta rechazada. Nunca la tasa.
     /// </summary>
     public decimal? ValorSeguro { get; init; }
 
-    /// <summary>HU-045.3 (#265): la ruta tiene el seguro marcado sin valor de la mercancía (no suma en el precio).</summary>
+    /// <summary>La ruta tiene el seguro marcado sin valor de la mercancía (no suma en el precio).</summary>
     public bool SeguroSinValor { get; init; }
 
     /// <summary>La ruta sin datos internos (ni los de sus camiones y conexos).</summary>
@@ -179,7 +179,7 @@ public sealed record clsExcelTotales(
     clsExcelInternoTotales? Interno)
 {
     /// <summary>
-    /// HU-045.3 (#265): suma del seguro de la mercancía de las rutas (0 si ninguna lo incluye); <c>null</c> si alguna ruta no tiene precio.
+    /// Suma del seguro de la mercancía de las rutas (0 si ninguna lo incluye); <c>null</c> si alguna ruta no tiene precio.
     /// Transporte + conexos + seguro = final.
     /// </summary>
     public decimal? PrecioSeguro { get; init; }

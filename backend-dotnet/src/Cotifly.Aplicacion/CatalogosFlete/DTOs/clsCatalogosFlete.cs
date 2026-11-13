@@ -9,7 +9,7 @@ namespace Cotifly.Aplicacion.CatalogosFlete.DTOs;
 /// <param name="TiposCarroceria">Opciones de tipo de carrocería.</param>
 /// <param name="ClasesViaje">Opciones de clase de viaje.</param>
 /// <param name="ClasesContenedor">
-/// HU-027.1 (#179): opciones de clase de contenedor, solo las de <c>GET /api/catalogos/clases-contenedor</c> de Nexo (no la lista
+/// Opciones de clase de contenedor, solo las de <c>GET /api/catalogos/clases-contenedor</c> de Nexo (no la lista
 /// provisional G15). <c>valor</c> = <c>etiqueta</c> = <c>descripcion</c> de Nexo, que es el código (<c>CNT40.HC</c>): el mismo
 /// texto con que <c>clsValidadorCatalogosCaptura</c> valida <c>clase_contenedor</c>. Vacía si Nexo no tiene la base SAP
 /// configurada (responde <c>[]</c>) o si ese catálogo opcional falla: no es un error.

@@ -5,7 +5,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// HU-045.3 (#265, ADR-032 §9): el seguro de la mercancía en el PDF del costeo. La política NOGE0076 pide mostrarlo aparte del flete: la
+/// El seguro de la mercancía (ADR-032 §9) en el PDF del costeo. La política NOGE0076 pide mostrarlo aparte del flete: la
 /// fila de la ruta imprime su precio sin el seguro (<see cref="PrecioRutaPdf"/>) y una fila propia, "Seguro de la mercancía", su valor en la
 /// moneda de la cotización. El total general no cambia (la suma de los precios finales, con el seguro). Nunca se imprime la tasa.
 /// </summary>
@@ -14,7 +14,7 @@ public sealed partial class clsCosteoCotizacionService
     /// <summary>Texto de la fila del seguro en la tabla de la ruta y en el resumen del pliego.</summary>
     public const string EtiquetaSeguroPdf = "Seguro de la mercancía";
 
-    /// <summary>Nota de la fila del seguro en la tabla de la ruta (contrato de #265 del 2026-11-10).</summary>
+    /// <summary>Nota de la fila del seguro en la tabla de la ruta.</summary>
     public const string NotaSeguroPdf = "Póliza específica para la mercancía de esta ruta; su valor va aparte del flete.";
 
     /// <summary>Frase que se agrega a la nota del resumen del pliego cuando alguna ruta incluye el seguro.</summary>
@@ -45,7 +45,7 @@ public sealed partial class clsCosteoCotizacionService
             return documento;
         }
 
-        // B3 de la auditoría: la fila de la ruta ya imprime su precio sin el seguro (PrecioRutaPdf); omitir la fila del seguro dejaría el PDF
+        // La fila de la ruta ya imprime su precio sin el seguro (PrecioRutaPdf); omitir la fila del seguro dejaría el PDF
         // sin cuadrar a la vista. Payload y PayloadPliego arman una sección por ruta: otra cosa es un error de programación.
         if (documento.Secciones.Count != rutas.Count)
         {

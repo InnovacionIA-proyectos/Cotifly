@@ -3,11 +3,11 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Licitaciones.DTOs;
 
 /// <summary>
-/// <c>AnalisisExcelDto</c> de Nexo (<c>POST /api/captura-solicitudes/analizar-excel</c>, HU-011.1): las hojas del Excel del cliente
+/// <c>AnalisisExcelDto</c> de Nexo (<c>POST /api/captura-solicitudes/analizar-excel</c>): las hojas del Excel del cliente
 /// con su fila de encabezado, los encabezados y las filas con datos como texto, para que el comercial mapee las columnas. No se guarda.
 /// </summary>
 /// <remarks>
-/// HU-023.5 (#160): <paramref name="CatalogoMercanciasDisponible"/> dice si se pudo leer el catálogo de tipos de mercancía del cubicador
+/// <paramref name="CatalogoMercanciasDisponible"/> dice si se pudo leer el catálogo de tipos de mercancía del cubicador
 /// para sugerir el <c>codigoMercancia</c> de cada fila (<see cref="clsHojaExcel.Mercancias"/>); <c>false</c> sin cubicador o si no
 /// respondió (entonces solo se usa la columna de código del Excel, si la trae).
 /// </remarks>
@@ -15,12 +15,12 @@ public sealed record clsAnalisisExcel(string Archivo, IReadOnlyList<clsHojaExcel
 
 /// <summary>
 /// Una hoja analizada. <paramref name="Filas"/> trae hasta 1000 filas; <paramref name="TotalFilas"/>, el total real.
-/// <paramref name="FilasExcel"/> (HU-013.15, #124): el número de fila de Excel (base 1, encabezado incluido) de cada elemento de
+/// <paramref name="FilasExcel"/>: el número de fila de Excel (base 1, encabezado incluido) de cada elemento de
 /// <paramref name="Filas"/>, el que ve el comercial en su archivo; lo calcula Cotifly con la misma regla de Nexo. <c>null</c> si no se
 /// pudo ubicar (la hoja no cuadra con el análisis de Nexo).
 /// </summary>
 /// <remarks>
-/// HU-023.5 (#160): <paramref name="ColumnaMercancia"/> y <paramref name="ColumnaCodigoMercancia"/> son los encabezados que Cotifly
+/// <paramref name="ColumnaMercancia"/> y <paramref name="ColumnaCodigoMercancia"/> son los encabezados que Cotifly
 /// reconoció como la descripción de la mercancía y como su código (<c>null</c> si no hay); <paramref name="Mercancias"/> trae, por cada
 /// fila con mercancía, el código sugerido (<see cref="clsCodigoMercanciaFila"/>). <c>null</c> si la hoja no tiene ninguna de esas columnas.
 /// </remarks>
@@ -36,12 +36,12 @@ public sealed record clsHojaExcel(
     IReadOnlyList<clsCodigoMercanciaFila>? Mercancias = null);
 
 /// <summary>
-/// HU-023.5 (#160): el código de mercancía de una fila del análisis. <paramref name="Fila"/> es el índice en <c>hojas[h].filas</c>
+/// El código de mercancía de una fila del análisis. <paramref name="Fila"/> es el índice en <c>hojas[h].filas</c>
 /// (base 0, el mismo <c>fila</c> de <c>lineas[]</c>), <paramref name="Texto"/> lo que dice la columna de la mercancía.
 /// <list type="bullet">
 /// <item>Con la columna de código del Excel: <paramref name="CodigoMercancia"/> es ese valor tal cual, <paramref name="Origen"/> =
 /// <c>excel</c> y <paramref name="Sugerido"/> = <c>false</c> (con el nombre del catálogo, si el código está en él).</item>
-/// <item>Si no: el código más parecido del catálogo (<c>clsSugeridorMercancia</c>, compartido con la #157), <paramref name="Origen"/> = <c>parecido</c> y
+/// <item>Si no: el código más parecido del catálogo (<c>clsSugeridorMercancia</c>, compartido con la cubicación rápida), <paramref name="Origen"/> = <c>parecido</c> y
 /// <paramref name="Sugerido"/> = <c>true</c>, con su <paramref name="Similitud"/> (0 a 1). El comercial lo confirma o lo cambia.</item>
 /// <item>Sin nada parecido (o sin catálogo): <paramref name="CodigoMercancia"/> vacío y <paramref name="Sugerido"/> = <c>false</c>.</item>
 /// </list>
@@ -66,7 +66,7 @@ public sealed record clsCodigoMercanciaFila(
 public sealed record clsArchivoSubido(string? Nombre, byte[] Contenido);
 
 /// <summary>
-/// HU-044.7 (#290): cómo se leyó el Excel de la licitación. <see cref="AnalizarExcel"/> es el flujo de siempre (<c>analizar-excel</c>:
+/// Cómo se leyó el Excel de la licitación. <see cref="AnalizarExcel"/> es el flujo por defecto (<c>analizar-excel</c>:
 /// la <c>fila</c> es el índice en <c>hojas[h].filas</c> y la exportación escribe los precios sobre el Excel original). Con
 /// <see cref="LeerEstructura"/> la leyó la IA de NEXO (<c>leer-estructura</c>): la <c>hoja</c> es el nombre de la tabla (solo referencia), la
 /// <c>fila</c> es el índice dentro de la tabla y la exportación arma un Excel NUEVO sin tocar el original.
@@ -79,7 +79,7 @@ public static class clsOrigenLectura
     /// <summary>Código del error cuando <c>origen_lectura</c> trae un valor desconocido (el mismo <c>VALIDATION_ERROR</c> del contrato).</summary>
     public const string CodigoValidacion = "VALIDATION_ERROR";
 
-    /// <summary>Normaliza el valor recibido: vacío o <c>null</c> es <see cref="AnalizarExcel"/> (el flujo de hoy no cambia).</summary>
+    /// <summary>Normaliza el valor recibido: vacío o <c>null</c> es <see cref="AnalizarExcel"/>.</summary>
     public static string Normalizar(string? valor) => string.IsNullOrWhiteSpace(valor) ? AnalizarExcel : valor.Trim();
 
     /// <summary>¿El valor es aceptable? Vacío, <see cref="AnalizarExcel"/> o <see cref="LeerEstructura"/>; cualquier otro es un error.</summary>
@@ -90,9 +90,9 @@ public static class clsOrigenLectura
 }
 
 /// <summary>
-/// Una ruta de la captura (fila de una licitación o ruta del formulario, HU-021.6): los campos de <c>CapturaLineaRequest</c>, la fila
+/// Una ruta de la captura (fila de una licitación o ruta del formulario): los campos de <c>CapturaLineaRequest</c>, la fila
 /// del Excel de donde salió (<c>null</c> en el formulario), su línea de negocio (<c>null</c> = la del encabezado) y sus servicios
-/// conexos del catálogo de Nexo (id y cantidad; el precio se toma del catálogo, decisión 3).
+/// conexos del catálogo de Nexo (id y cantidad; el precio se toma del catálogo).
 /// </summary>
 public sealed record clsLineaLicitacionEntrada(
     int? Fila,
@@ -100,11 +100,11 @@ public sealed record clsLineaLicitacionEntrada(
     string? LineaNegocio = null,
     IReadOnlyList<clsConexoCapturaEntrada?>? Conexos = null);
 
-/// <summary>Un servicio conexo pedido en la captura de una ruta (HU-021.6, decisión 3): el id del catálogo de Nexo y la cantidad.</summary>
+/// <summary>Un servicio conexo pedido en la captura de una ruta: el id del catálogo de Nexo y la cantidad.</summary>
 public sealed record clsConexoCapturaEntrada(string? IdServicioConexo, decimal? Cantidad);
 
 /// <summary>
-/// Entrada de <c>POST /web/licitaciones</c> (HU-011.2, ADR-017): el cliente (NIT del buscador), la línea de negocio de Cotifly, el
+/// Entrada de <c>POST /web/licitaciones</c> (ADR-017): el cliente (NIT del buscador), la línea de negocio de Cotifly, el
 /// encabezado (siempre <c>licitacion</c>), la hoja mapeada, las líneas ya mapeadas, opcionalmente el Excel original y la moneda
 /// (<c>COP</c> por defecto o <c>USD</c>, ADR-014 §5: en USD los precios se convierten con la TRM del día de creación).
 /// </summary>
@@ -122,7 +122,7 @@ public sealed record clsEntradaLicitacion(
 /// <summary>
 /// Un error del reporte de validación (<c>ErrorFilaLicitacion</c>): <paramref name="Indice"/> es la posición en <c>lineas[]</c>
 /// (base 0; <c>null</c> si el error es del encabezado), <paramref name="Fila"/> la fila del análisis que mandó el frontend (índice
-/// base 0 en <c>hojas[h].filas</c>, técnico) y <paramref name="FilaExcel"/> (HU-013.15, #124) el número de fila de la hoja de Excel
+/// base 0 en <c>hojas[h].filas</c>, técnico) y <paramref name="FilaExcel"/> el número de fila de la hoja de Excel
 /// (base 1, encabezado incluido), el que ve el comercial: solo con el archivo adjunto y una <c>fila</c> que existe en la hoja.
 /// </summary>
 public sealed record clsErrorFilaLicitacion(int? Indice, int? Fila, string Campo, string Codigo, string Mensaje, int? FilaExcel = null);
@@ -138,7 +138,7 @@ public sealed record clsResultadoLicitacion(clsCotizacionSolicitud? Cotizacion, 
     public static clsResultadoLicitacion Fallo(Dominio.Comun.clsErrorDominio error) => new(null, error, []);
 
     /// <summary>
-    /// Reporte por fila. <paramref name="catalogoNoDisponible"/> (HU-013.11) es el código del catálogo que no respondió
+    /// Reporte por fila. <paramref name="catalogoNoDisponible"/> es el código del catálogo que no respondió
     /// (<c>CATALOGOS_FLETE_NO_DISPONIBLE</c> o <c>MUNICIPIOS_NO_DISPONIBLE</c>): va en <c>error.detalle.motivo</c> y el mensaje avisa
     /// que lo que dependía de él se valida al volver a enviarla.
     /// </summary>
@@ -155,10 +155,10 @@ public sealed record clsResultadoLicitacion(clsCotizacionSolicitud? Cotizacion, 
 
 /// <summary>
 /// <c>Licitacion</c>: la vista del comercial de una cotización de varias líneas (estado y precios; nunca el costo de Nexo). Sin
-/// <c>referencia</c> desde #138 (decisión 1 de HU-021: la cabecera ya no la guarda).
+/// <c>referencia</c>: la cabecera no la guarda.
 /// </summary>
 /// <remarks>
-/// HU-023.5 (#160): <c>ProgresoCubicacion</c> resume la cubicación en segundo plano (<c>null</c> si ninguna ruta pasó por la cola) y
+/// <c>ProgresoCubicacion</c> resume la cubicación en segundo plano (<c>null</c> si ninguna ruta pasó por la cola) y
 /// <c>Cubicacion</c> trae, por ruta cubicada, el resultado y los avisos del cubicador (la misma forma de <c>POST /web/solicitudes-costeo</c>).
 /// </remarks>
 public sealed record clsLicitacion(
@@ -180,25 +180,25 @@ public sealed record clsLicitacion(
     IReadOnlyList<Cotizaciones.DTOs.clsCubicacionRutaResumen>? Cubicacion = null)
 {
     /// <summary>
-    /// HU-034.1 (#201, parte A): <c>true</c> si quien consulta no es el dueño sino el director o el gerente comercial de su regional (solo
+    /// <c>true</c> si quien consulta no es el dueño sino el director o el gerente comercial de su regional (solo
     /// consulta: las acciones siguen siendo del dueño); <c>false</c> para el dueño. Igual que <c>DetalleCotizacion.solo_lectura</c>.
     /// </summary>
     public bool SoloLectura { get; init; }
 
     /// <summary>
-    /// HU-028.1 (#183): líneas (rutas) rechazadas por la Mesa de Costeo de Nexo. No son pendientes (<c>lineas_pendientes</c> no las cuenta)
+    /// Líneas (rutas) rechazadas por la Mesa de Costeo de Nexo. No son pendientes (<c>lineas_pendientes</c> no las cuenta)
     /// ni suman en <c>precio_final</c>.
     /// </summary>
     public int LineasRechazadas { get; init; }
 
     /// <summary>
-    /// HU-036.2 (#206, DEF-1027-2 de #226): cuándo el comercial finalizó la licitación, en UTC; <c>null</c> sin finalizar. Siempre se
+    /// Cuándo el comercial finalizó la licitación, en UTC; <c>null</c> sin finalizar. Siempre se
     /// serializa, como en <c>CotizacionResumen</c> y <c>CosteoCotizacion</c>.
     /// </summary>
     public DateTimeOffset? FinalizadaAt { get; init; }
 
     /// <summary>
-    /// HU-044.10 (#293, parte 1): cómo se leyó el Excel de la licitación (<see cref="clsOrigenLectura.AnalizarExcel"/> o
+    /// Cómo se leyó el Excel de la licitación (<see cref="clsOrigenLectura.AnalizarExcel"/> o
     /// <see cref="clsOrigenLectura.LeerEstructura"/>); <c>null</c> si la licitación no tiene archivo. Una licitación con archivo anterior al
     /// script 22 (sin <c>origenLectura</c> guardado) cae en <see cref="clsOrigenLectura.AnalizarExcel"/>. Siempre se serializa.
     /// </summary>
@@ -206,7 +206,7 @@ public sealed record clsLicitacion(
 }
 
 /// <summary>
-/// HU-023.5 (#160): progreso de la cubicación en segundo plano de una licitación. <paramref name="Estado"/>: <c>en_curso</c> (quedan
+/// Progreso de la cubicación en segundo plano de una licitación. <paramref name="Estado"/>: <c>en_curso</c> (quedan
 /// rutas pendientes), <c>con_fallas</c> (no quedan pendientes pero alguna falló: la licitación no viaja a Nexo hasta reintentarla) o
 /// <c>completa</c>.
 /// </summary>
@@ -238,7 +238,7 @@ public sealed record clsProgresoCubicacion(string Estado, int Total, int Cubicad
 }
 
 /// <summary>
-/// HU-023.5 (#160): un camión de una ruta de la licitación, en su orden: códigos de vehículo y carrocería del cubicador (vacíos = sin
+/// Un camión de una ruta de la licitación, en su orden: códigos de vehículo y carrocería del cubicador (vacíos = sin
 /// vehículo, lo resuelve la Mesa de Costeo), el peso que lleva, el volumen y los dos porcentajes de llenado.
 /// </summary>
 public sealed record clsCamionLicitacion(
@@ -250,10 +250,10 @@ public sealed record clsCamionLicitacion(
     decimal? PorcentajeLlenadoVolumen,
     decimal? PorcentajeLlenadoPeso)
 {
-    /// <summary>HU-028.1 (#183): estado del costeo del camión (<c>rechazada</c> si la Mesa de Costeo rechazó su línea); <c>null</c> sin enviar.</summary>
+    /// <summary>Estado del costeo del camión (<c>rechazada</c> si la Mesa de Costeo rechazó su línea); <c>null</c> sin enviar.</summary>
     public string? EstadoCosteo { get; init; }
 
-    /// <summary>HU-028.1 (#183): por qué la Mesa de Costeo rechazó la línea del camión; <c>null</c> si no está rechazado.</summary>
+    /// <summary>Por qué la Mesa de Costeo rechazó la línea del camión; <c>null</c> si no está rechazado.</summary>
     public string? MotivoRechazo { get; init; }
 
     /// <summary>Los camiones de la ruta, en su orden.</summary>
@@ -270,7 +270,7 @@ public sealed record clsCamionLicitacion(
 }
 
 /// <summary>
-/// Datos de la exportación del Excel de una licitación (HU-011.3, ADR-017 §5): solo precios con margen y estados, nunca el costo de
+/// Datos de la exportación del Excel de una licitación (ADR-017 §5): solo precios con margen y estados, nunca el costo de
 /// Nexo. <see cref="Original"/> es el Excel del cliente (o <c>null</c> si la licitación se armó sin archivo).
 /// </summary>
 public sealed record clsExportacionLicitacion(
@@ -287,14 +287,14 @@ public sealed record clsExportacionLicitacion(
     DateTimeOffset GeneradoEn)
 {
     /// <summary>
-    /// HU-044.7 (#290): la licitación se leyó con la IA de NEXO (<c>leer-estructura</c>). El exportador NO escribe sobre el Excel original
+    /// La licitación se leyó con la IA de NEXO (<c>leer-estructura</c>). El exportador NO escribe sobre el Excel original
     /// (<see cref="Original"/> llega <c>null</c>): arma la hoja «Licitación» nueva y el resumen deja la nota de que se leyó con la IA.
     /// </summary>
     public bool LeidaConIa { get; init; }
 }
 
 /// <summary>
-/// Una línea exportada: dónde va (fila del análisis), qué es, su estado legible y su precio (<c>null</c> = sin costeo). HU-023.5 (#160):
+/// Una línea exportada: dónde va (fila del análisis), qué es, su estado legible y su precio (<c>null</c> = sin costeo),
 /// con sus camiones (<paramref name="Camiones"/>, con los nombres del catálogo del cubicador si respondió) y el estado de su cubicación
 /// (<paramref name="Cubicacion"/>, legible; <c>null</c> si no pasó por la cubicación en segundo plano).
 /// </summary>
@@ -311,20 +311,20 @@ public sealed record clsLineaExportacion(
     string? Cubicacion = null)
 {
     /// <summary>
-    /// HU-028.1 (#183): la Mesa de Costeo de Nexo rechazó la ruta (todos sus camiones): sale "SIN COSTEO", sin precio ni motivo, y no cuenta
+    /// La Mesa de Costeo de Nexo rechazó la ruta (todos sus camiones): sale "SIN COSTEO", sin precio ni motivo, y no cuenta
     /// en el total ni como pendiente.
     /// </summary>
     public bool Rechazada { get; init; }
 
     /// <summary>
-    /// HU-045.3 (#265): el seguro de la mercancía de la línea en la moneda, aparte de <see cref="PrecioFinal"/> (la tarifa del transporte);
-    /// <c>null</c> sin seguro o con la línea rechazada. Hoy las licitaciones no lo admiten. Nunca la tasa.
+    /// El seguro de la mercancía de la línea en la moneda, aparte de <see cref="PrecioFinal"/> (la tarifa del transporte);
+    /// <c>null</c> sin seguro o con la línea rechazada. Las licitaciones no lo admiten. Nunca la tasa.
     /// </summary>
     public decimal? ValorSeguro { get; init; }
 }
 
 /// <summary>
-/// HU-023.5 (#160): un camión exportado. <paramref name="Vehiculo"/> y <paramref name="Carroceria"/> son el nombre del catálogo del
+/// Un camión exportado. <paramref name="Vehiculo"/> y <paramref name="Carroceria"/> son el nombre del catálogo del
 /// cubicador (o el código si el catálogo no respondió); vacíos = sin vehículo (lo resuelve la Mesa de Costeo de Nexo).
 /// </summary>
 public sealed record clsCamionExportacion(
@@ -336,10 +336,10 @@ public sealed record clsCamionExportacion(
     decimal? PorcentajeLlenadoVolumen,
     decimal? PorcentajeLlenadoPeso)
 {
-    /// <summary>HU-028.1 (#183): la Mesa de Costeo de Nexo rechazó la línea de este camión (no cuenta en el precio). Sin el motivo.</summary>
+    /// <summary>La Mesa de Costeo de Nexo rechazó la línea de este camión (no cuenta en el precio). Sin el motivo.</summary>
     public bool Rechazado { get; init; }
 
-    /// <summary>HU-028.1 (#183): texto del camión rechazado en la hoja "Camiones Cotifly".</summary>
+    /// <summary>Texto del camión rechazado en la hoja "Camiones Cotifly".</summary>
     public const string TextoRechazado = "Rechazado en NEXO (sin costeo)";
 
     /// <summary>Texto del camión sin vehículo.</summary>
@@ -375,7 +375,7 @@ public sealed record clsArchivoExportado(string Nombre, byte[] Contenido, string
 
 /// <summary><c>LineaLicitacion</c>: una línea con su estado y su precio con margen (<c>null</c> mientras no tiene flete).</summary>
 /// <remarks>
-/// HU-023.5 (#160): con sus camiones (<paramref name="Camiones"/>), el estado de su cubicación en segundo plano
+/// Con sus camiones (<paramref name="Camiones"/>), el estado de su cubicación en segundo plano
 /// (<paramref name="EstadoCubicacion"/>: <c>pendiente</c>, <c>cubicada</c>, <c>fallida</c>, o <c>null</c> si se cubicó al guardarla), el
 /// error si falló y lo que respondió el cubicador.
 /// </remarks>
@@ -396,7 +396,7 @@ public sealed record clsLineaLicitacion(
     IReadOnlyList<clsCamionLicitacion>? Camiones = null)
 {
     /// <summary>
-    /// HU-028.1 (#183): por qué la Mesa de Costeo de Nexo rechazó camiones de la línea (los motivos distintos, unidos con <c>" | "</c>);
+    /// Por qué la Mesa de Costeo de Nexo rechazó camiones de la línea (los motivos distintos, unidos con <c>" | "</c>);
     /// <c>null</c> si ninguno. Con <c>estado_costeo = rechazada</c> la línea no tiene precio y no es pendiente. Solo en pantalla: el Excel
     /// no lleva el motivo.
     /// </summary>

@@ -17,7 +17,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Cotizaciones.Services;
 
 /// <summary>
-/// HU-027.1 (#179): <c>GET /web/cotizaciones/{folio}</c>, el detalle de una cotización en una sola llamada (<see cref="clsDetalleCotizacion"/>).
+/// <c>GET /web/cotizaciones/{folio}</c>, el detalle de una cotización en una sola llamada (<see cref="clsDetalleCotizacion"/>).
 /// Solo lee lo que Cotifly tiene guardado: no consulta Nexo (ni el catálogo de conexos), no dispara el polling ni escribe en la cotización.
 /// </summary>
 public interface IClsDetalleCotizacionService
@@ -26,7 +26,7 @@ public interface IClsDetalleCotizacionService
     /// El detalle de <paramref name="folio"/> para el usuario autenticado. Acceso:
     /// <list type="bullet">
     /// <item>el dueño, siempre;</item>
-    /// <item>el <c>director</c> (cualquier regional, HU-037.3 #211) o un <c>gerente_comercial</c> cuya regional efectiva incluye al dueño
+    /// <item>el <c>director</c> (cualquier regional) o un <c>gerente_comercial</c> cuya regional efectiva incluye al dueño
     /// (<see cref="IClsRegionalUsuario.PuedeVerDeAsync"/>), solo consulta (<c>solo_lectura = true</c>), con la misma
     /// regla que <c>GET /web/cotizaciones/regional</c> y el PDF (<see cref="IClsRegionalUsuario.EsMiembroDeMiRegionalAsync"/>). Si la
     /// regional no se puede comprobar (sin regional o fuente caída) se niega (fail-closed). Cada consulta de un gerente a una cotización
@@ -63,7 +63,7 @@ public sealed class clsDetalleCotizacionService(
     /// <summary>Herramienta de la auditoría de las consultas de un gerente a una cotización ajena (<c>EventosHerramienta.herramienta</c>).</summary>
     public const string HerramientaAuditoria = "consultar_detalle_cotizacion";
 
-    /// <summary>La regla de acceso del detalle, compartida con el Excel de la cotización (HU-018.1, #155).</summary>
+    /// <summary>La regla de acceso del detalle, compartida con el Excel de la cotización.</summary>
     private readonly clsAccesoLecturaCotizacion _acceso = new(usuario, cotizaciones, usuarios, regionales, auditoria);
 
     public async Task<clsResultado<clsDetalleCotizacion>> ObtenerAsync(string folio, CancellationToken cancellationToken = default)
@@ -87,24 +87,23 @@ public sealed class clsDetalleCotizacionService(
         var costeo = clsCosteoCotizacionService.Vista(
             cotizacion, opcionesPdf.Value.BaseUrl, estadosNexo, clsCategoriasConexosService.EnMemoria(categorias, cotizacion),
             situacionesNexo?.Obtener(cotizacion.Id),
-            // Corrección conexos (nombre nunca id): el nombre del catálogo que ya esté en memoria (sin leer Nexo), como respaldo del guardado.
+            // Nombre nunca id: el nombre del catálogo que ya esté en memoria (sin leer Nexo), como respaldo del guardado.
             nombres: clsCategoriasConexosService.NombresEnMemoria(categorias, cotizacion))
             with
             {
-                // HU-045.2 (#264): la tasa vigente del seguro, como en GET .../costeo.
+                // La tasa vigente del seguro, como en GET .../costeo.
                 TasaSeguroVigente = await clsCosteoCotizacionService.TasaSeguroVigenteSinFallarAsync(
                     tarifasSeguro, (Microsoft.Extensions.Logging.ILogger?)logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
                     cotizacion.Folio, cancellationToken),
             };
 
-        // HU-046.3 (#269): el bloque politica_seguros de cada ruta, como en GET .../costeo (sin completar códigos: el detalle no escribe ni
+        // El bloque politica_seguros de cada ruta, como en GET .../costeo (sin completar códigos: el detalle no escribe ni
         // lee el catálogo de Nexo; un conexo sin codigoServicio no cumple hasta que el costeo lo complete).
         costeo = clsPoliticaSegurosCosteo.ConPolitica(costeo, cotizacion, await clsPoliticaSegurosCosteo.LeerSinFallarAsync(
             politicaSeguros, (Microsoft.Extensions.Logging.ILogger?)logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
             cotizacion.Folio, cancellationToken));
 
-        // HU-039.1 (#218): el costo bruto de las rutas es solo del dueño; el gerente en solo consulta lo recibe en null (decisión
-        // conservadora: hasta HU-039 el detalle nunca le mostraba costos).
+        // El costo bruto de las rutas es solo del dueño; el gerente en solo consulta lo recibe en null.
         if (soloLectura)
         {
             costeo = costeo.SinCostoFinal();
@@ -134,14 +133,14 @@ public sealed class clsDetalleCotizacionService(
 
     /// <summary>
     /// Totales de la solicitud con las reglas del costeo y del PDF: la tarifa de cada ruta es <see cref="clsCosteoCotizacionService.PrecioTransporte"/>,
-    /// los conexos los de <c>costeo.rutas[].servicios_conexos</c> y (HU-045.3, #265) el seguro el <c>valor_seguro</c> de cada ruta. Sin precio en
+    /// los conexos los de <c>costeo.rutas[].servicios_conexos</c> y el seguro el <c>valor_seguro</c> de cada ruta. Sin precio en
     /// alguna ruta, los precios salen <c>null</c>.
     /// </summary>
     internal static clsTotalesCotizacion Totales(clsCotizacionSolicitud cotizacion, clsCosteoCotizacion costeo)
     {
         var rutas = cotizacion.RutasOrdenadas;
         var pesos = rutas.Select(r => r.PesoKg).OfType<decimal>().ToList();
-        // HU-028.1 (#183): las rutas rechazadas por la Mesa no cuentan en los precios (ni sus conexos).
+        // Las rutas rechazadas por la Mesa no cuentan en los precios (ni sus conexos).
         var cotizables = cotizacion.RutasCotizables;
         var conPrecio = costeo.PrecioFinal is not null && cotizables.Count > 0 && cotizables.All(r => r.PrecioFinalLinea is not null);
         var transportes = cotizables.Select(r => clsCosteoCotizacionService.PrecioTransporte(cotizacion, r)).ToList();

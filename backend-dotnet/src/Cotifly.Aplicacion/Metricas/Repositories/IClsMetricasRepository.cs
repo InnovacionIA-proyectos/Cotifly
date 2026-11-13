@@ -3,8 +3,7 @@ using Cotifly.Aplicacion.Metricas.DTOs;
 namespace Cotifly.Aplicacion.Metricas.Repositories;
 
 /// <summary>
-/// Puerto de lectura de las métricas de <c>dbo_cotifly</c>: las filas del tablero de HU-010.1 (ADR-016). Las vistas del borrador
-/// (<c>vActividadPorComercial</c>, <c>vAjustesMargenPorComercial</c>) se retiraron en HU-014.3 (#152, <c>db/scripts/08</c>).
+/// Puerto de lectura de las métricas de <c>dbo_cotifly</c>: las filas del tablero de métricas (ADR-016).
 /// </summary>
 public interface IClsMetricasRepository
 {

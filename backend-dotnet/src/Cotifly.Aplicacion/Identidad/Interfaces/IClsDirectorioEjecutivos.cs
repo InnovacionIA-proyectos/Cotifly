@@ -3,7 +3,7 @@ namespace Cotifly.Aplicacion.Identidad.Interfaces;
 /// <summary>
 /// Puerto de solo lectura hacia la tabla corporativa de ejecutivos con su regional (<c>DWCubosEBSSAP.DimEjecutivo</c>,
 /// ADR-016 §6). El usuario se identifica por su <c>nombreUsuario</c> de ClientePro (el mismo de <c>UsuariosWeb</c>); el
-/// adaptador quita el prefijo de dominio (<c>boterosoto\</c>) de la columna de la tabla antes de comparar (#81).
+/// adaptador quita el prefijo de dominio (<c>boterosoto\</c>) de la columna de la tabla antes de comparar.
 /// Los fallos de la base se propagan: quien llama decide (el tablero responde 503, fail-closed; el login sigue sin refrescar
 /// la regional).
 /// </summary>

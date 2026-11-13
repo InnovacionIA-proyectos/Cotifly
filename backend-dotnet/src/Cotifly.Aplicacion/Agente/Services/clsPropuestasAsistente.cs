@@ -26,7 +26,7 @@ public sealed record clsCambiosCargaAsistente(
 }
 
 /// <summary>
-/// Arma las acciones propuestas del asistente (HU-013.6, #102, ADR-018 §2b) con código, nunca con el LLM. Las reglas son las MISMAS
+/// Arma las acciones propuestas del asistente (ADR-018 §2b) con código, nunca con el LLM. Las reglas son las MISMAS
 /// del endpoint destino, sin copias: margen con <see cref="clsCotizacionSolicitud.ValidarAjusteMargen"/>; conexos con
 /// <see cref="clsServiciosConexosCosteoService.Validar"/> y <see cref="clsServiciosConexosCosteoService.ValidarPrecondiciones"/>; la
 /// re-solicitud la valida antes el caso de uso (<c>IClsReSolicitudCosteoService.ValidarAsync</c>, que necesita la base y el catálogo).
@@ -51,7 +51,7 @@ public static class clsPropuestasAsistente
 
     /// <summary>
     /// <c>ajustar_margen</c> → <c>PUT .../costeo/margen</c> <c>{margen, justificacion, linea_orden}</c> sobre la ruta
-    /// <paramref name="lineaOrden"/> (HU-021.8, #135; sin ella, la única ruta). Errores: los de la ruta (<c>RUTA_REQUERIDA</c> con varias
+    /// <paramref name="lineaOrden"/> (sin ella, la única ruta). Errores: los de la ruta (<c>RUTA_REQUERIDA</c> con varias
     /// rutas y sin <paramref name="lineaOrden"/>, <c>RUTA_INEXISTENTE</c>), los del dominio (<c>AJUSTE_MARGEN_INVALIDO</c>,
     /// <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_ENVIADO</c>, <c>JUSTIFICACION_REQUERIDA</c> contra el sugerido de ESA ruta) y
     /// <c>AJUSTE_MARGEN_INVALIDO</c> si ya es el margen vigente de la ruta.
@@ -92,7 +92,7 @@ public static class clsPropuestasAsistente
         string resumen;
         if (cotizacion.Rutas.Count > 1)
         {
-            // HU-021.8: solo cambia la ruta elegida; el total cambia por ella.
+            // Solo cambia la ruta elegida; el total cambia por ella.
             resumen = $"Ajustar el margen de la ruta {ruta.Orden} ({ruta.Ruta}) de {Porcentaje(anterior)} a {Porcentaje(nuevo)}: su precio pasa de "
                       + $"{clsFormatoMoneda.Formatear(recalculo.Valor.PrecioRutaAnterior, moneda)} a {clsFormatoMoneda.Formatear(recalculo.Valor.PrecioRuta, moneda)} {moneda}"
                       + (recalculo.Valor.PrecioFinal is { } total
@@ -114,7 +114,7 @@ public static class clsPropuestasAsistente
 
         if (conConexos)
         {
-            // HU-043.2 (#251): el margen es solo del transporte; los conexos van a su precio de venta y no cambian con el ajuste.
+            // El margen es solo del transporte; los conexos van a su precio de venta y no cambian con el ajuste.
             resumen += " Los servicios conexos no cambian: se cotizan a su precio de venta, sin margen.";
         }
 
@@ -130,11 +130,11 @@ public static class clsPropuestasAsistente
     }
 
     /// <summary>
-    /// #278 (DU §5): Nexo recibe las horas de cargue y descargue en pareja. Si el asistente propone una sola, la otra se completa con la
+    /// Nexo recibe (DU §5) las horas de cargue y descargue en pareja. Si el asistente propone una sola, la otra se completa con la
     /// guardada en la ruta o, si la ruta no tiene, con el valor por defecto de Nexo (<see cref="clsLineasNegocioNexo.HorasPorDefectoDe"/>:
     /// 4, o 1 en una devolución de contenedor, según <paramref name="lineaNegocioNexo"/>, el <c>mapeoLineasNexo</c> de la línea de negocio de
     /// la cotización, como pide el DU: la línea de NEXO, no el nombre de la de Cotifly). Así el chat no
-    /// falla con <c>CAMPO_REQUERIDO</c> en un cambio que antes funcionaba. Con las dos o ninguna, los cambios quedan como vienen.
+    /// falla con <c>CAMPO_REQUERIDO</c> cuando el comercial cambia una sola hora. Con las dos o ninguna, los cambios quedan como vienen.
     /// </summary>
     public static clsCambiosCargaAsistente CompletarHoras(clsCambiosCargaAsistente cambios, clsCotizacionSolicitud cotizacion, string? lineaNegocioNexo)
     {
@@ -180,7 +180,7 @@ public static class clsPropuestasAsistente
 
         cuerpo["nueva_version"] = entrada.VersionNueva;
 
-        // HU-021.9 (#136; rehace el aviso de #124): el aviso de los conexos que se conservan tiene su espacio reservado dentro de los 300
+        // El aviso de los conexos que se conservan tiene su espacio reservado dentro de los 300
         // caracteres: va justo después de la acción, se arma para que quepa completo ("y N más" incluido) y la descripción de los
         // cambios de carga se acorta antes que él. El motivo (texto del LLM) y el resto van después y son lo único que el recorte final
         // puede cortar.
@@ -205,7 +205,7 @@ public static class clsPropuestasAsistente
 
     /// <summary>
     /// <c>agregar_servicios_conexos</c> → <c>POST .../costeo/servicios-conexos</c> <c>{items: [{linea_orden, servicio_id, cantidad}]}</c>
-    /// sobre la ruta <paramref name="lineaOrden"/> (sin ella, la única ruta; HU-021.8). Errores: los del endpoint antes de llamar a Nexo
+    /// sobre la ruta <paramref name="lineaOrden"/> (sin ella, la única ruta). Errores: los del endpoint antes de llamar a Nexo
     /// (<c>SOLICITUD_INVALIDA</c> por la forma, <c>ESTADO_NO_PERMITE</c>, <c>COSTEO_NO_LISTO</c>, <c>PDF_YA_ENVIADO</c>,
     /// <c>RUTA_REQUERIDA</c>, <c>CONEXO_INVALIDO</c> y <c>LINEA_SIN_COTIZACION_NEXO</c>).
     /// </summary>
@@ -237,7 +237,7 @@ public static class clsPropuestasAsistente
         var unidad = string.IsNullOrWhiteSpace(servicio.Unidad) ? string.Empty : $" ({servicio.Unidad.Trim()})";
         // Corrección conexos (nombre nunca id): nombre, si no el código, si no la categoría; nunca el id interno del servicio.
         var resumen = $"Agregar {Numero(cantidad)}{unidad} de «{servicio.Nombre ?? servicio.Codigo ?? servicio.Categoria ?? "servicio conexo"}» a la ruta {ruta.Orden} en Nexo. "
-                      // HU-043.2 (#251): el conexo no lleva el margen de la ruta.
+                      // El conexo no lleva el margen de la ruta.
                       + "Se cotiza a su precio de venta de Nexo, sin margen; queda incluido en el PDF."
                       + SufijoPdf(cotizacion);
         return new clsAccionPropuesta(
@@ -347,8 +347,8 @@ public static class clsPropuestasAsistente
     public const int LargoMaximoNombreConexo = 40;
 
     /// <summary>
-    /// Aviso del resumen de <c>re_solicitar_costeo</c> con los conexos que se conservan (HU-021.9, #136; rehace el aviso de #124: con la
-    /// decisión 3 los conexos son de Cotifly y siguen en el precio de su ruta), con un espacio inicial; vacío si no hay. Solo nombres (de
+    /// Aviso del resumen de <c>re_solicitar_costeo</c> con los conexos que se conservan (los conexos son de Cotifly y
+    /// siguen en el precio de su ruta), con un espacio inicial; vacío si no hay. Solo nombres (de
     /// Nexo, nunca del LLM, cada uno recortado a <see cref="LargoMaximoNombreConexo"/>) y sin montos. Siempre cabe completo en
     /// <paramref name="largoMaximo"/>: si no, nombra menos conexos (el resto va en "y N más") y, en el límite, solo los cuenta. Nunca
     /// pierde "y N más".

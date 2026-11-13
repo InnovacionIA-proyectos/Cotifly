@@ -11,7 +11,7 @@ namespace Cotifly.Aplicacion.Identidad.Services;
 /// Implementación de <see cref="IClsRegionalUsuario"/>: consulta <see cref="IClsDirectorioEjecutivos"/> (fuente viva) y cae a
 /// <c>UsuariosWeb.regional</c> para los usuarios que no aparecen en ella. Si la fuente viva está configurada y falla, responde
 /// <see cref="clsCodigosAplicacion.RegionalNoDisponible"/>: no mezcla las dos fuentes a medias. Las regionales se comparan
-/// recortadas y sin distinguir mayúsculas. HU-037.3 (#211): también decide el alcance por rol (director: todas o la elegida; gerente:
+/// recortadas y sin distinguir mayúsculas. También decide el alcance por rol (director: todas o la elegida; gerente:
 /// la suya), para que el tablero, el listado regional, el detalle y el PDF ajenos no repitan esa regla.
 /// </summary>
 public sealed class clsRegionalUsuarioService(

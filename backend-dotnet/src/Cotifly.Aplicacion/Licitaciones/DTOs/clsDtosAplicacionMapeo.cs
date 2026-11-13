@@ -1,7 +1,7 @@
 namespace Cotifly.Aplicacion.Licitaciones.DTOs;
 
-// HU-044.3 (#254): POST /web/licitaciones/aplicar-mapeo. Lo que llega del front y lo que vuelve, en los nombres de Cotifly (la Api los
-// escribe en snake_case; cada línea con los nombres de LineaLicitacionWeb). La forma de NEXO (camelCase) la arma el adaptador de la #252.
+// POST /web/licitaciones/aplicar-mapeo. Lo que llega del front y lo que vuelve, en los nombres de Cotifly (la Api los
+// escribe en snake_case; cada línea con los nombres de LineaLicitacionWeb). La forma de NEXO (camelCase) la arma el adaptador de la importación de NEXO.
 
 /// <summary>
 /// Entrada del caso de uso: el NIT de la licitación (opcional; con él NEXO usa el diccionario de ese cliente), el mapeo confirmado, TODAS

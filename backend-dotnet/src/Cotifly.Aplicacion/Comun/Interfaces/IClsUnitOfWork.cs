@@ -11,7 +11,7 @@ public interface IClsUnitOfWork
 {
     /// <summary>
     /// Confirma los cambios pendientes y devuelve cuántas filas se escribieron. Sin una transacción abierta, si SQL Server elige el
-    /// guardado como víctima de un interbloqueo (1205) se repite hasta tres veces (HU-021, ADR-019).
+    /// guardado como víctima de un interbloqueo (1205) se repite hasta tres veces (ADR-019).
     /// </summary>
     /// <exception cref="clsViolacionUnicidadException">
     /// Una restricción única rechazó el cambio (ej. <c>uq_cotizaciones_folio</c> → <c>FOLIO_DUPLICADO</c>).
@@ -32,7 +32,7 @@ public interface IClsUnitOfWork
     Task<bool> GuardarCambiosSiVersionAsync(Guid cotizacionId, int versionEsperada, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Endurecimiento B (#199): la comparación de <see cref="GuardarCambiosSiVersionAsync"/> DENTRO de una transacción ya abierta (la del
+    /// La comparación de <see cref="GuardarCambiosSiVersionAsync"/> DENTRO de una transacción ya abierta (la del
     /// candado del folio, <see cref="IClsCandadoTransaccional"/>): bloquea la fila de la cotización (<c>UPDLOCK</c>) y compara su
     /// <c>versionNegocio</c> con <paramref name="versionEsperada"/>, sin guardar ni confirmar nada. Lo que se guarde después en esa
     /// transacción (con <see cref="GuardarCambiosAsync"/>) queda protegido hasta confirmarla, y si la transacción se deshace no queda nada.

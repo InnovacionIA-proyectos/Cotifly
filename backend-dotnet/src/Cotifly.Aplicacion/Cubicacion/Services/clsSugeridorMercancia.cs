@@ -5,8 +5,8 @@ using Cotifly.Aplicacion.Cubicacion.DTOs;
 namespace Cotifly.Aplicacion.Cubicacion.Services;
 
 /// <summary>
-/// Sugiere el tipo de mercancía del catálogo del cubicador (<c>GET /tipos-mercancia</c>) más parecido a un texto libre (HU-023.2, #157;
-/// la misma lógica la usa la licitación, HU-023.5, #160). Compara sin tildes, sin mayúsculas y sin signos contra el nombre y el código de
+/// Sugiere el tipo de mercancía del catálogo del cubicador (<c>GET /tipos-mercancia</c>) más parecido a un texto libre (la
+/// misma lógica la usa la licitación). Compara sin tildes, sin mayúsculas y sin signos contra el nombre y el código de
 /// cada tipo <b>activo</b>. Determinista y sin estado: no llama a nadie. Prefiere no sugerir antes que sugerir mal: el comercial siempre
 /// puede escoger del catálogo.
 /// </summary>

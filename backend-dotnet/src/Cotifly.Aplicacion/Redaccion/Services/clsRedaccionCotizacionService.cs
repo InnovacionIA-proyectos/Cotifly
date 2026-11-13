@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Aplicacion.Redaccion.Services;
 
 /// <summary>
-/// Redacción del asunto y la introducción del PDF con la IA y el texto estándar de respaldo (HU-013.5, ADR-018 §2a). Nunca falla por
+/// Redacción del asunto y la introducción del PDF con la IA y el texto estándar de respaldo (ADR-018 §2a). Nunca falla por
 /// la IA: siempre devuelve textos válidos.
 /// </summary>
 public interface IClsRedaccionCotizacionService

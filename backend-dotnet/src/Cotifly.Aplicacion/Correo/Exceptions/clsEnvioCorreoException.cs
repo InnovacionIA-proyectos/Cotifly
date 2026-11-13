@@ -23,7 +23,7 @@ public sealed class clsEnvioCorreoException : Exception
     }
 
     /// <summary>
-    /// HU-033: el transporte no respondió a tiempo después de recibir el mensaje, así que pudo quedar encolado. El comercial debe revisar
+    /// El transporte no respondió a tiempo después de recibir el mensaje, así que pudo quedar encolado. El comercial debe revisar
     /// el buzón o el historial antes de volver a enviar.
     /// </summary>
     public bool Incierto { get; init; }
