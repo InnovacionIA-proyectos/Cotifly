@@ -6,7 +6,7 @@ namespace Cotifly.Dominio.Margen;
 /// Ajuste (negociación) del margen frente a la política (<c>dbo_cotifly.MargenAjustes</c>).
 /// Los márgenes se redondean a 4 decimales half-to-even (escala de las columnas <c>DECIMAL(9,4)</c>) antes de
 /// validar y de calcular <see cref="Diferencia"/> = aplicado − política, para que lo que queda en memoria sea
-/// exactamente lo que guarda la base (el Python redondeaba la diferencia a 6, pero la columna solo guarda 4).
+/// exactamente lo que guarda la base.
 /// </summary>
 public sealed partial class clsMargenAjuste
 {
@@ -22,7 +22,7 @@ public sealed partial class clsMargenAjuste
     public Guid Id { get; private set; }
     public Guid? CotizacionId { get; private set; }
 
-    /// <summary>Ruta a la que se le ajustó el margen (<c>lineaSolicitudId</c>, script 0009, HU-021); <c>null</c> en el ajuste del chat.</summary>
+    /// <summary>Ruta a la que se le ajustó el margen (<c>lineaSolicitudId</c>, script 0009); <c>null</c> en el ajuste del chat.</summary>
     public Guid? LineaSolicitudId { get; private set; }
     public string? Folio { get; private set; }
     public decimal? MargenPolitica { get; private set; }
@@ -33,7 +33,7 @@ public sealed partial class clsMargenAjuste
     public DateTimeOffset CreatedAt { get; private set; }
 
     /// <summary>
-    /// HU-028 (#186, D6 del diseño): la ruta ajustada se quitó al editar la solicitud. El ajuste queda sin ruta (<c>lineaSolicitudId</c> en
+    /// La ruta ajustada se quitó al editar la solicitud. El ajuste queda sin ruta (<c>lineaSolicitudId</c> en
     /// <c>NULL</c>) y conserva la cotización y el folio como historial. Devuelve <c>true</c> si cambió.
     /// </summary>
     public bool DesvincularRuta()
@@ -118,7 +118,7 @@ public sealed partial class clsMargenAjuste
     private static partial System.Text.RegularExpressions.Regex ExpresionEspacios();
 
     /// <summary>
-    /// Ajuste del comercial sobre el costeo de Nexo (HU-013.2, ADR-018 §3): <paramref name="margenSugerido"/> queda en
+    /// Ajuste del comercial sobre el costeo de Nexo (ADR-018 §3): <paramref name="margenSugerido"/> queda en
     /// <c>margenPolitica</c> y la justificación en <c>motivo</c>. La justificación es obligatoria solo si el margen queda por debajo del
     /// sugerido (<c>JUSTIFICACION_REQUERIDA</c>); por encima puede faltar (<c>motivo</c> nulo). Mismo redondeo y validación por método
     /// que <see cref="Registrar"/>.

@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.CatalogosFlete.Services;
 
 /// <summary>
-/// Elige el proveedor de catálogos maestros (HU-013.10) según <c>Nexo:UrlBase</c>: configurada → <see cref="clsCatalogosMaestrosNexo"/>
+/// Elige el proveedor de catálogos maestros según <c>Nexo:UrlBase</c>: configurada → <see cref="clsCatalogosMaestrosNexo"/>
 /// (cliente tipado, transitorio) envuelto en <see cref="clsCatalogosMaestrosEnCache"/> si <c>Nexo:MinutosCacheCatalogos</c> es mayor que
 /// cero; vacía → <see cref="clsCatalogosMaestrosNoDisponible"/>.
 /// </summary>

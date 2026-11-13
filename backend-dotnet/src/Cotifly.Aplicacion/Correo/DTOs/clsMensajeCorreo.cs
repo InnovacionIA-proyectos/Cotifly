@@ -22,13 +22,13 @@ public sealed record clsMensajeCorreo(
     string CuerpoHtml,
     clsAdjuntoCorreo Adjunto)
 {
-    /// <summary>HU-033: copias ocultas (el comercial dueño, decisión 4).</summary>
+    /// <summary>Copias ocultas (el comercial dueño).</summary>
     public IReadOnlyList<string> Bcc { get; init; } = [];
 
-    /// <summary>HU-033: <c>X-Correlation-ID</c> de MailSender: <c>{folio}:{id del correo en Cotifly}</c>.</summary>
+    /// <summary><c>X-Correlation-ID</c> de MailSender: <c>{folio}:{id del correo en Cotifly}</c>.</summary>
     public string? IdCorrelacion { get; init; }
 
-    /// <summary>HU-033: <c>Metadata</c> de MailSender (JSON): origen, folio, id del correo y de la cotización.</summary>
+    /// <summary><c>Metadata</c> de MailSender (JSON): origen, folio, id del correo y de la cotización.</summary>
     public IReadOnlyDictionary<string, string?> Metadatos { get; init; } = new Dictionary<string, string?>();
 }
 
@@ -36,12 +36,12 @@ public sealed record clsMensajeCorreo(
 public sealed record clsAdjuntoCorreo(string Nombre, byte[] Contenido, string TipoMime = "application/pdf");
 
 /// <summary>
-/// HU-033: lo que devuelve el transporte cuando acepta el mensaje. Con MailSender: <see cref="IdExterno"/> (el <c>id</c> del 202) y
+/// Lo que devuelve el transporte cuando acepta el mensaje. Con MailSender: <see cref="IdExterno"/> (el <c>id</c> del 202) y
 /// <see cref="EstadoCorreo.Encolado"/>; la entrega real se consulta después (<c>IClsSeguimientoCorreoExterno</c>).
 /// </summary>
 public sealed record clsEnvioAceptado(Guid? IdExterno, EstadoCorreo Estado, string? MessageId);
 
-/// <summary>HU-033: estado de un correo en MailSender, ya traducido al de Cotifly.</summary>
+/// <summary>Estado de un correo en MailSender, ya traducido al de Cotifly.</summary>
 /// <param name="Estado">Estado de Cotifly (<c>encolado</c>, <c>enviando</c>, <c>enviado</c> o <c>fallido</c>).</param>
 /// <param name="Error"><c>lastError</c> de MailSender (o el motivo de un estado final sin error).</param>
 /// <param name="Intentos"><c>attemptCount</c>.</param>

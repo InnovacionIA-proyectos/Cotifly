@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace Cotifly.Infraestructura.Comun.Persistence.Configurations;
 
 /// <summary>
-/// <c>dbo_cotifly.SapMargenCliente</c> (<c>db/scripts/17_sap_margen_sincronizacion.sql</c>, HU-042.1 #242; la lee HU-042.2 #243). Sin el
+/// <c>dbo_cotifly.SapMargenCliente</c> (<c>db/scripts/17_sap_margen_sincronizacion.sql</c>). Sin el
 /// 17, <c>/health/ready</c> dice "falta 17". Las columnas de texto no llevan <c>COLLATE</c> en el script: heredan la de la base
 /// (<see cref="clsCotiflyDbContext.TablasConCollationDeLaBase"/>).
 /// </summary>
@@ -29,7 +29,7 @@ internal sealed class clsSapMargenClienteConfiguracion : IEntityTypeConfiguratio
     }
 }
 
-/// <summary><c>dbo_cotifly.SapMargenSyncLog</c> (<c>db/scripts/17</c>): log de corridas de la sincronización del backend (HU-042.2 #243; tablas de HU-042.1 #242).</summary>
+/// <summary><c>dbo_cotifly.SapMargenSyncLog</c> (<c>db/scripts/17</c>): log de corridas de la sincronización del backend.</summary>
 internal sealed class clsSapMargenSyncLogConfiguracion : IEntityTypeConfiguration<clsSapMargenSyncLogFila>
 {
     public void Configure(EntityTypeBuilder<clsSapMargenSyncLogFila> builder)

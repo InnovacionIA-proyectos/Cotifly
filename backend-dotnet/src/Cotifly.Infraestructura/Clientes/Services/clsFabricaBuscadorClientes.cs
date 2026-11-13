@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Clientes.Services;
 
 /// <summary>
-/// Elige el buscador de clientes según <c>Nexo:UrlBase</c> (HU-005.2): configurada → <see cref="clsBuscadorClientesNexo"/>
+/// Elige el buscador de clientes según <c>Nexo:UrlBase</c>: configurada → <see cref="clsBuscadorClientesNexo"/>
 /// (cliente tipado, transitorio); vacía → <see cref="clsBuscadorClientesNoDisponible"/>.
 /// </summary>
 internal static class clsFabricaBuscadorClientes

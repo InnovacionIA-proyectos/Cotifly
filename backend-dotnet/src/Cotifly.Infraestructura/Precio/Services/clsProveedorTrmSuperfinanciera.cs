@@ -12,7 +12,7 @@ using Polly;
 namespace Cotifly.Infraestructura.Precio.Services;
 
 /// <summary>
-/// TRM oficial desde los datos abiertos de la Superintendencia Financiera (HU-012.1, ADR-014): conjunto "Tasa de Cambio
+/// TRM oficial desde los datos abiertos de la Superintendencia Financiera (ADR-014): conjunto "Tasa de Cambio
 /// Representativa del Mercado - Histórico" (<c>Trm:Url</c>, por defecto <c>https://www.datos.gov.co/resource/32sa-8pi3.json</c>),
 /// API SODA de Socrata sin credenciales. Consulta SoQL:
 /// <c>?$select=valor,vigenciadesde,vigenciahasta&amp;$where=vigenciadesde &lt;= 'F' AND vigenciahasta &gt;= 'F'&amp;$order=vigenciadesde DESC&amp;$limit=1</c>
@@ -100,7 +100,7 @@ public sealed class clsProveedorTrmSuperfinanciera(
     }
 
     /// <summary>
-    /// Primera fila del arreglo SODA (<c>[{"valor":"3306.86","vigenciadesde":"2026-09-26T00:00:00.000",...}]</c>) si es válida: valor
+    /// Primera fila del arreglo SODA (<c>[{"valor":"3306.86","vigenciadesde":"AAAA-MM-DDT00:00:00.000",...}]</c>) si es válida: valor
     /// positivo (texto o número, redondeado a 4 decimales, la escala de <c>trmAplicada</c>) y rango de vigencia que cubre la fecha. Un valor
     /// cero o negativo, o cualquier otra cosa → <c>null</c> (<c>TRM_NO_DISPONIBLE</c>).
     /// </summary>
@@ -141,7 +141,7 @@ public sealed class clsProveedorTrmSuperfinanciera(
 
     /// <summary>
     /// Fecha de vigencia: los 10 primeros caracteres (<c>AAAA-MM-DD</c>) como <see cref="DateOnly"/>, sin conversión de zona horaria (la
-    /// fuente publica fechas de calendario, <c>2026-09-26T00:00:00.000</c>; un parseo como instante podría correr el día).
+    /// fuente publica fechas de calendario, <c>AAAA-MM-DDT00:00:00.000</c>; un parseo como instante podría correr el día).
     /// </summary>
     private static DateOnly? Fecha(JsonElement fila, string campo) =>
         fila.TryGetProperty(campo, out var valor)

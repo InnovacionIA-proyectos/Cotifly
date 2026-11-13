@@ -3,7 +3,7 @@ using System.Globalization;
 namespace Cotifly.Aplicacion.Margen.DTOs;
 
 /// <summary>
-/// HU-042.2 (#243, decisión del 2026-11-04): la última sincronización <c>ok</c> de la copia local del margen de SAP TM supera
+/// La última sincronización <c>ok</c> de la copia local del margen de SAP TM supera
 /// <c>SapTm:AvisoSincronizacionHoras</c>. El margen se usa igual (la copia no caduca); se avisa al comercial y en el log.
 /// </summary>
 /// <param name="Ultima">Fin de la última corrida <c>ok</c>.</param>

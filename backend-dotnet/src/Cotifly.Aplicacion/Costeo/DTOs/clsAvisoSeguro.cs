@@ -5,7 +5,7 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Costeo.DTOs;
 
 /// <summary>
-/// HU-045.3 (#265, decisión del usuario del 2026-11-09): aviso de las rutas que cotizan con el seguro de la mercancía marcado y SIN valor de
+/// Aviso de las rutas que cotizan con el seguro de la mercancía marcado y SIN valor de
 /// la mercancía (una edición quitó el valor). No bloquea nada: el seguro no suma al precio y el PDF sale sin su fila en esas rutas. Va en la
 /// vista del costeo (y por ella en el detalle por folio) y en la respuesta de generar el PDF, para que el frontend lo muestre.
 /// </summary>
@@ -34,5 +34,5 @@ public sealed record clsAvisoSeguro(string Codigo, string Mensaje, IReadOnlyList
     }
 }
 
-/// <summary>HU-045.3 (#265): una ruta del <see cref="clsAvisoSeguro"/>.</summary>
+/// <summary>Una ruta del <see cref="clsAvisoSeguro"/>.</summary>
 public sealed record clsRutaAvisoSeguro(int LineaOrden, Guid LineaSolicitudId);

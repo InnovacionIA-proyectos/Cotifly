@@ -4,10 +4,10 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// HU-023.5 (#160): <c>Cubicador:ReclamoSegundos</c> debe ser mayor que lo que puede durar la llamada de una ruta al cubicador más
+/// <c>Cubicador:ReclamoSegundos</c> debe ser mayor que lo que puede durar la llamada de una ruta al cubicador más
 /// <see cref="MargenSegundos"/>: si el reclamo de una ruta vence antes de que termine su llamada, otra réplica la tomaría y la llamaría
 /// dos veces. La llamada (<see cref="Cubicacion.Services.clsCubicadorHttp.DuracionMaximaLlamada"/>) es la espera por el cupo global, el
-/// <c>POST /recomendaciones</c> y, si no responde, la espera previa y la reconsulta con GET. Opción C (D3, E2E 2026-10-16):
+/// <c>POST /recomendaciones</c> y, si no responde, la espera previa y la reconsulta con GET. Además,
 /// <c>Cubicador:MaximoParalelo</c> no puede superar <c>Cubicador:MaximoConcurrente</c>, el cupo global del proceso.
 /// </summary>
 public sealed class clsValidadorOpcionesCubicacionLicitacion(IOptions<clsOpcionesCubicador> cubicador) : IValidateOptions<clsOpcionesCubicacionLicitacion>

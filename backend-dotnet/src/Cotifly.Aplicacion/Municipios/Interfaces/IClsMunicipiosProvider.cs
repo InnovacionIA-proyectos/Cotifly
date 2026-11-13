@@ -12,7 +12,7 @@ namespace Cotifly.Aplicacion.Municipios.Interfaces;
 /// Infraestructura registra uno que responde <c>MUNICIPIOS_NO_DISPONIBLE</c>.
 /// </summary>
 /// <remarks>
-/// HU-023 (#176, contrato con Nexo §3.1 y §7): el buscador de origen/destino usa <c>GET /api/captura-solicitudes/ciudades</c>
+/// Contrato con Nexo §3.1 y §7: el buscador de origen/destino usa <c>GET /api/captura-solicitudes/ciudades</c>
 /// (<see cref="BuscarAsync"/>, máximo 50 filas, solo Colombia): de ahí salen los <c>origenMunicipioId</c>/<c>destinoMunicipioId</c>.
 /// <see cref="ObtenerAsync"/> sigue siendo el catálogo completo (<c>GET /api/captura-solicitudes/municipios</c>, la misma tabla
 /// <c>tbl_municipios</c> y los mismos ids) para lo que necesita todos los municipios a la vez: validar un id y resolver por nombre las
@@ -28,7 +28,7 @@ public interface IClsMunicipiosProvider
     Task<clsResultado<IReadOnlyList<clsMunicipio>>> ObtenerAsync(Guid usuarioId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// HU-023 (#176): búsqueda de ciudades para el origen/destino (<c>GET /api/captura-solicitudes/ciudades?q=&amp;departamento=</c>):
+    /// Búsqueda de ciudades para el origen/destino (<c>GET /api/captura-solicitudes/ciudades?q=&amp;departamento=</c>):
     /// el <paramref name="texto"/> dentro del nombre y el <paramref name="departamento"/> exacto, sin tildes ni mayúsculas; como mucho
     /// <see cref="MaximoBusqueda"/> filas, ordenadas por nombre. Por omisión filtra el catálogo completo con la misma regla (dobles de
     /// prueba); el adaptador de Nexo consulta <c>/ciudades</c>.

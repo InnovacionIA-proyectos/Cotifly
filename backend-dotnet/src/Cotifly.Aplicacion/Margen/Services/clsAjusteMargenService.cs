@@ -10,20 +10,19 @@ using Cotifly.Dominio.Precio;
 namespace Cotifly.Aplicacion.Margen.Services;
 
 /// <summary>
-/// Implementación de <see cref="IClsAjusteMargenService"/> (port de <c>registrar_ajuste_margen</c> + margen
-/// negociado de HU-003.4):
+/// Implementación de <see cref="IClsAjusteMargenService"/> (<c>registrar_ajuste_margen</c>, margen
+/// negociado):
 /// <list type="bullet">
 /// <item>Los márgenes se redondean a 4 decimales (escala de <c>MargenAjustes</c>) y se validan por método con
 /// <see cref="clsReglaMargen"/> (<c>markup</c> admite m ≥ 1); fuera de rango o método desconocido → <c>AJUSTE_MARGEN_INVALIDO</c>.</item>
 /// <item>El precio usa el valor manual guardado: no se vuelve a resolver la política (costo inválido → <c>PRECIO_INVALIDO</c>).</item>
 /// <item>El ajuste queda en <c>MargenAjustes</c> con el comercial (<c>usuarioId</c>) y
 /// diferencia = aplicado − política; la cotización, si viene, debe ser del comercial, y el ajuste guarda su ruta
-/// (<c>lineaSolicitudId</c>: la indicada o la única; HU-021.8, #135).</item>
+/// (<c>lineaSolicitudId</c>: la indicada o la única).</item>
 /// </list>
 /// Nada se guarda si alguna validación falla.
-/// <para><b>Sin llamadores en producción</b> (auditoría de #135): era la herramienta <c>registrar_ajuste_margen</c> del agente legado,
-/// retirado en HU-013.9 (#105); queda registrado en DI y cubierto por sus pruebas. El ajuste vigente es
-/// <c>clsAjusteMargenCosteoService</c> (<c>PUT .../costeo/margen</c>). Candidato a retirarse.</para>
+/// <para><b>Sin llamadores en producción</b>: está registrado en DI y cubierto por sus pruebas. El ajuste vigente es
+/// <c>clsAjusteMargenCosteoService</c> (<c>PUT .../costeo/margen</c>).</para>
 /// </summary>
 public sealed class clsAjusteMargenService(
     IClsMargenAjusteRepository ajustes,
@@ -82,7 +81,7 @@ public sealed class clsAjusteMargenService(
 
             folio ??= cotizacion.Folio;
 
-            // HU-021.8 (#135): el ajuste guarda la ruta real (la indicada, o la única de la cotización; sin rutas, ninguna).
+            // El ajuste guarda la ruta real (la indicada, o la única de la cotización; sin rutas, ninguna).
             if (cotizacion.Rutas.Count > 0 || entrada.LineaSolicitudId is not null)
             {
                 var ruta = cotizacion.ResolverRuta(null, entrada.LineaSolicitudId);

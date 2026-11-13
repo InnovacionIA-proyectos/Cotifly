@@ -5,14 +5,14 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Licitaciones.Validators;
 
 /// <summary>
-/// HU-044.3 (#254): validación local de <c>POST /web/licitaciones/aplicar-mapeo</c> ANTES de llamar a NEXO, con los códigos de NEXO. Solo
+/// Validación local de <c>POST /web/licitaciones/aplicar-mapeo</c> ANTES de llamar a NEXO, con los códigos de NEXO. Solo
 /// revisa la FORMA de la petición (partes que faltan, vienen mal formadas o se repiten); qué campos y transformaciones existen y si el
 /// mapeo trae origen y destino lo decide NEXO (<c>CAMPO_INVALIDO</c>, <c>TRANSFORMACION_INVALIDA</c>, <c>CAMPO_REQUERIDO</c>), cuyo 400
 /// llega con su código.
 /// </summary>
 public static class clsValidadorAplicacionMapeo
 {
-    /// <summary>Máximo de filas por petición: el tope de NEXO (el comentario del 2026-11-10 fijó 5000, no 1000).</summary>
+    /// <summary>Máximo de filas por petición: el tope de NEXO.</summary>
     public const int MaximoFilas = 5000;
 
     /// <summary>Máximo de columnas del mapeo y de celdas por fila (el de NEXO).</summary>

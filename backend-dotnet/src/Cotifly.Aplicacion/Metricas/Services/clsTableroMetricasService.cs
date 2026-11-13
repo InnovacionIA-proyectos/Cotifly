@@ -12,7 +12,7 @@ using Cotifly.Dominio.Metricas;
 namespace Cotifly.Aplicacion.Metricas.Services;
 
 /// <summary>
-/// Tablero de métricas agregadas (HU-010.1, ADR-016): <c>GET /web/metricas/comercial</c> y <c>/regional</c>. El rol sale del
+/// Tablero de métricas agregadas (ADR-016): <c>GET /web/metricas/comercial</c> y <c>/regional</c>. El rol sale del
 /// token (claim <c>rol</c>) y se revalida aquí; el cálculo lo hace <see cref="clsCalculadoraMetricas"/>.
 /// </summary>
 public interface IClsTableroMetricasService
@@ -22,7 +22,7 @@ public interface IClsTableroMetricasService
 
     /// <summary>
     /// Indicadores de la regional del gerente (o de un comercial suyo con <c>usuario_id</c>), lista de comerciales, serie y
-    /// concentración por ciudad. <c>gerente_comercial</c> (su regional) o <c>director</c> (todas, o la de <c>regional</c>; HU-037.3, #211),
+    /// concentración por ciudad. <c>gerente_comercial</c> (su regional) o <c>director</c> (todas, o la de <c>regional</c>),
     /// con el alcance de <see cref="IClsRegionalUsuario.ResolverAlcanceAsync"/>.
     /// </summary>
     Task<clsResultado<clsMetricasRegional>> ObtenerRegionalAsync(clsConsultaMetricas consulta, CancellationToken cancellationToken = default);
@@ -43,7 +43,7 @@ public sealed class clsTableroMetricasService(
 
     public const string FormatoFecha = "yyyy-MM-dd";
 
-    /// <summary>Primer año que acepta <c>anio</c> (HU-010.5); el último es el año en curso más uno (en Bogotá).</summary>
+    /// <summary>Primer año que acepta <c>anio</c>; el último es el año en curso más uno (en Bogotá).</summary>
     public const int AnioMinimo = 2020;
     public const string MensajeComercialAjeno = "Comercial no encontrado en tu regional.";
 
@@ -106,7 +106,7 @@ public sealed class clsTableroMetricasService(
             return ErrorNoAutenticado();
         }
 
-        // HU-037.3 (#211): el alcance (la regional del gerente; todas o la elegida para el director) lo decide IClsRegionalUsuario.
+        // El alcance (la regional del gerente; todas o la elegida para el director) lo decide IClsRegionalUsuario.
         var alcance = await regionales.ResolverAlcanceAsync(gerente, rol, consulta.Regional, cancellationToken);
         if (alcance.EsFallo)
         {
@@ -151,7 +151,7 @@ public sealed class clsTableroMetricasService(
     /// <summary>
     /// Periodo de la consulta en fechas de negocio: por defecto del 1 de enero del año en curso a hoy. 400 si una fecha no es
     /// <c>AAAA-MM-DD</c>, si <c>hasta</c> es anterior a <c>desde</c> o si el rango supera <see cref="AniosMaximos"/> años.
-    /// HU-010.5 (#187): con <c>anio</c> el periodo es ese año completo y, con <c>mes</c>, ese mes completo (fechas de Bogotá); reemplaza a
+    /// Con <c>anio</c> el periodo es ese año completo y, con <c>mes</c>, ese mes completo (fechas de Bogotá); reemplaza a
     /// <c>desde</c>/<c>hasta</c>, que se ignoran. 400 si <c>mes</c> llega sin <c>anio</c>, si no es un entero de 1 a 12 o si <c>anio</c>
     /// no es un entero de <see cref="AnioMinimo"/> al año en curso más uno. Solo la regional los pasa: en el comercial siempre son nulos.
     /// </summary>
@@ -188,7 +188,7 @@ public sealed class clsTableroMetricasService(
         return new clsPeriodoMetricas(desde, hasta, calendario.ZonaHoraria);
     }
 
-    /// <summary>El año completo, o el mes completo de ese año (HU-010.5).</summary>
+    /// <summary>El año completo, o el mes completo de ese año.</summary>
     private clsResultado<clsPeriodoMetricas> PeriodoAnioMes(string? textoAnio, string? textoMes, DateOnly hoy)
     {
         if (string.IsNullOrWhiteSpace(textoAnio))

@@ -47,7 +47,7 @@ public static class clsChatClientFactory
         var cadena = new List<IChatClient> { CrearProveedor(opciones.Principal(), opciones.TimeoutSeg) };
         cadena.AddRange(opciones.FallbacksConfigurados().Select(f => CrearProveedor(f, opciones.TimeoutSeg)));
 
-        // Siempre con el decorador de respaldo, también con un solo proveedor: así su caída llega como IA_NO_DISPONIBLE (HU-013.16).
+        // Siempre con el decorador de respaldo, también con un solo proveedor: así su caída llega como IA_NO_DISPONIBLE.
         IChatClient cliente = new clsChatClientConRespaldo(cadena, registros.CreateLogger<clsChatClientConRespaldo>());
         if (opciones.Rpm > 0)
         {
@@ -60,7 +60,7 @@ public static class clsChatClientFactory
     /// <summary>
     /// Cliente de un proveedor (sin respaldo ni limitador). <paramref name="http"/> reemplaza el transporte HTTP del SDK (pruebas con
     /// un manejador falso); null usa el del SDK. Con <c>openai_compatible</c> cada petición lleva <c>"stream": false</c> explícito
-    /// (<see cref="clsPoliticaSinStreaming"/>, #84).
+    /// (<see cref="clsPoliticaSinStreaming"/>).
     /// </summary>
     public static IChatClient CrearProveedor(clsOpcionesProveedorIA proveedor, int timeoutSeg = 60, HttpClient? http = null)
     {

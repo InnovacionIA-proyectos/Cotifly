@@ -42,14 +42,14 @@ public static class clsTextosAgente
     }
 
     /// <summary>
-    /// Respaldo del validador de la respuesta final (HU-003.10, #16): el modelo no produjo una respuesta válida ni con el reintento.
+    /// Respaldo del validador de la respuesta final: el modelo no produjo una respuesta válida ni con el reintento.
     /// Sale como error controlado (<c>200 {texto, error: true}</c> en <c>/web/chat</c>).
     /// </summary>
     public const string RespuestaNoEstructurada =
         "No pude estructurar la respuesta. Reenvía tu mensaje o reformúlalo; lo que ya calculé en esta conversación no se pierde.";
 
     /// <summary>
-    /// HU-013.6 (#102): el turno armó una acción propuesta pero el modelo no dio un texto válido ni con el reintento. La propuesta (con
+    /// El turno armó una acción propuesta pero el modelo no dio un texto válido ni con el reintento. La propuesta (con
     /// su resumen del servidor) sale igual con este texto.
     /// </summary>
     public const string PropuestaSinTexto = "Preparé una propuesta para esta cotización: revisa el resumen y, si estás de acuerdo, confírmala con el botón.";
@@ -58,17 +58,17 @@ public static class clsTextosAgente
     public const string TurnoEnCurso = "Todavía estoy respondiendo tu mensaje anterior en esta conversación. Espera la respuesta y vuelve a escribir.";
 
     /// <summary>
-    /// HU-013.16 (#126): el modelo pidió herramientas sin parar hasta <c>IA:MaxIteraciones</c> y el turno se cortó sin respuesta ni
+    /// El modelo pidió herramientas sin parar hasta <c>IA:MaxIteraciones</c> y el turno se cortó sin respuesta ni
     /// propuesta. La pregunta del comercial y las herramientas que alcanzaron a correr quedan en la conversación.
     /// </summary>
     public const string MaxIteraciones =
         "No pude completar tu solicitud: necesité demasiados pasos y la detuve. Reformúlala en un mensaje más corto o pide una cosa a la vez; la conversación no se pierde.";
 
-    /// <summary>HU-013.16 (#126): todos los modelos de IA fallaron por indisponibilidad (no por el límite de peticiones).</summary>
+    /// <summary>Todos los modelos de IA fallaron por indisponibilidad (no por el límite de peticiones).</summary>
     public const string IaNoDisponible =
         "El asistente de IA no está disponible en este momento. Inténtalo en unos minutos; mientras tanto puedes ajustar la cotización desde su detalle.";
 
-    // Códigos de RespuestaChatError.codigo (HU-013.16): el frontend decide qué mostrar sin leer el texto.
+    // Códigos de RespuestaChatError.codigo: el frontend decide qué mostrar sin leer el texto.
     public const string CodigoIaNoDisponible = "IA_NO_DISPONIBLE";
     public const string CodigoLimiteModelo = "LIMITE_MODELO";
     public const string CodigoTurnoEnCurso = "TURNO_EN_CURSO";

@@ -8,7 +8,7 @@ namespace Cotifly.Aplicacion.Pdf.Interfaces;
 /// <c>armar_cotizacion.py</c> / <c>armar_multi.py</c> sin tomar decisiones de negocio: todo viene resuelto en el documento.
 /// </summary>
 /// <remarks>
-/// PDFsharp-MigraDoc no es thread-safe (#92, #95): el adaptador renderiza un documento a la vez por proceso y los demás esperan
+/// PDFsharp-MigraDoc no es thread-safe: el adaptador renderiza un documento a la vez por proceso y los demás esperan
 /// turno hasta <c>Pdf:TiempoEsperaRenderSegundos</c>. Si la espera se agota lanza <see cref="clsRenderPdfOcupadoException"/>.
 /// </remarks>
 public interface IClsGeneradorPdf

@@ -4,7 +4,7 @@ using Cotifly.Aplicacion.Licitaciones.DTOs;
 namespace Cotifly.Api.Licitaciones.DTOs;
 
 /// <summary>
-/// <c>SugerirMapeoWeb</c> (HU-044.2, #253): los encabezados de UNA hoja, en el orden del archivo, y una muestra de sus filas (el frontend
+/// <c>SugerirMapeoWeb</c>: los encabezados de UNA hoja, en el orden del archivo, y una muestra de sus filas (el frontend
 /// manda hasta 200). <c>nit_cliente</c> es el NIT de la licitación, con o sin puntos y dígito de verificación (opcional: sin él NEXO usa
 /// solo el diccionario general). Una celda o un encabezado <c>null</c> viaja como texto vacío.
 /// </summary>
@@ -23,7 +23,7 @@ public sealed class clsSugerirMapeoWebRequest
 }
 
 /// <summary>
-/// <c>LecturaEstructura</c> (HU-044.2, #253): la lectura de <c>leer-estructura</c> de NEXO tal cual, en snake_case. La <c>receta</c> es el
+/// <c>LecturaEstructura</c>: la lectura de <c>leer-estructura</c> de NEXO tal cual, en snake_case. La <c>receta</c> es el
 /// JSON de NEXO sin tocar (sus claves no pasan a snake_case: es opaca) y cada elemento de <c>tablas</c> tiene la forma de las hojas de
 /// <c>analizar-excel</c>, para mandarlo a <c>sugerir-mapeo</c> sin transformarlo.
 /// </summary>

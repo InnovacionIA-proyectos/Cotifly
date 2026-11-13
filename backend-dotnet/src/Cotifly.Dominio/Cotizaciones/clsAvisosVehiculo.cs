@@ -1,6 +1,6 @@
 namespace Cotifly.Dominio.Cotizaciones;
 
-/// <summary>Un vehículo en un aviso de la ruta (HU-032, #197): el tipo de vehículo y la carrocería (cualquiera puede faltar).</summary>
+/// <summary>Un vehículo en un aviso de la ruta: el tipo de vehículo y la carrocería (cualquiera puede faltar).</summary>
 public sealed record clsVehiculoAviso(string? TipoVehiculo, string? Carroceria)
 {
     /// <summary>El vehículo como lo lee el comercial: <c>3S3 - FURGON</c>, <c>3S3</c> o <c>sin vehículo</c>.</summary>
@@ -16,7 +16,7 @@ public sealed record clsVehiculoAviso(string? TipoVehiculo, string? Carroceria)
 }
 
 /// <summary>
-/// HU-032 (#197, ADR-022): los avisos de la ruta sobre el vehículo que quedó en sus camiones. Viajan con las advertencias del cubicador de
+/// Los avisos de la ruta sobre el vehículo que quedó en sus camiones (ADR-022). Viajan con las advertencias del cubicador de
 /// la ruta (<see cref="clsAvisosCubicacion.Advertencias"/>, <c>avisosCubicacion</c>): se guardan, salen en la respuesta de la captura, de la
 /// licitación (por fila), de la edición y en <c>GET .../costeo</c>. Son informativos: nunca bloquean.
 /// </summary>

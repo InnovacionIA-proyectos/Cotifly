@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Configuracion;
 
 /// <summary>
-/// Reglas de <see cref="clsOpcionesBaseDatos"/> (HU-023 #176): <c>BaseDatos:MotivoBusquedaAgotada</c> debe ser uno de
+/// Reglas de <see cref="clsOpcionesBaseDatos"/>: <c>BaseDatos:MotivoBusquedaAgotada</c> debe ser uno de
 /// <see cref="clsOpcionesBaseDatos.Modos"/>. Con otro valor la API no arranca.
 /// </summary>
 public sealed class clsValidadorOpcionesBaseDatos : IValidateOptions<clsOpcionesBaseDatos>

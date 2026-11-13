@@ -312,6 +312,8 @@ public sealed class clsSincronizacionMargenSapTests
             coordinacion, new clsEntornoFalso(Environments.Production), TimeProvider.System, logger);
 
         await worker.StartAsync(Ct);
+        // En .NET 10 ExecuteAsync arranca en otro hilo: sin esperar, StopAsync podía cancelarlo antes de que escribiera el warning.
+        await EsperarRegistroAsync(logger, r => r.Nivel == LogLevel.Information && r.Mensaje.Contains("activa"));
         var ronda = await worker.RondaAsync(Ct);
         await worker.StopAsync(Ct);
 
@@ -319,6 +321,17 @@ public sealed class clsSincronizacionMargenSapTests
         logger.Registros.Should().Contain(r => r.Nivel == LogLevel.Warning && r.Mensaje.Contains("http"));
         logger.Registros.Should().Contain(r => r.Nivel == LogLevel.Error && r.Mensaje.Contains("InvalidOperationException"));
         logger.Registros.Should().NotContain(r => r.Mensaje.Contains(clsSapRentabFalso.Clave) || r.Mensaje.Contains("sap-tm-falso"));
+    }
+
+    /// <summary>Espera, como mucho 10 s, a que el worker escriba un registro que cumpla <paramref name="condicion"/>.</summary>
+    private static async Task EsperarRegistroAsync<T>(clsLoggerFalso<T> logger, Func<clsRegistroLog, bool> condicion)
+    {
+        using var tope = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        tope.CancelAfter(TimeSpan.FromSeconds(10));
+        while (!logger.Registros.Any(condicion))
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(20), tope.Token);
+        }
     }
 
     private static IReadOnlyList<clsFilaMargenSap> Leer(string json)

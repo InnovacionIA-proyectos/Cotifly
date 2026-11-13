@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Diagnostics;
 namespace Cotifly.Api.Comun;
 
 /// <summary>
-/// Endurecimiento A (#199): manejador global de las excepciones que ningún caso de uso controló. Sin él, un 500 salía sin cuerpo (o con la
+/// Manejador global de las excepciones que ningún caso de uso controló, para que un 500 no salga sin cuerpo (o con la
 /// página de desarrollo). Responde siempre la misma forma del contrato, sin detalles técnicos ni la traza:
 /// <list type="bullet">
 /// <item><c>/web/*</c>, <c>/pdfs/*</c> y el resto: 500 <c>ErrorNegocio</c> <c>{"error": {"codigo": "ERROR_INTERNO", "mensaje": "...", "detalle": {"id_correlacion": "..."}}}</c>.</item>
@@ -14,7 +14,7 @@ namespace Cotifly.Api.Comun;
 /// <c>RequestId</c> del ámbito de los demás logs de la petición), el método y la ruta (sin la consulta). No se responde nada si la petición
 /// la abortó el cliente (<see cref="OperationCanceledException"/> con <c>RequestAborted</c>): no hay a quién responderle y no es un error del
 /// servidor. Un <see cref="BadHttpRequestException"/> (por ejemplo, el cuerpo sin <c>Content-Length</c> que pasa el límite y Kestrel corta)
-/// conserva su estado (413, 400...) con <c>ErrorWeb</c>, como antes de existir este manejador.
+/// conserva su estado (413, 400...) con <c>ErrorWeb</c>.
 /// </summary>
 public static partial class clsManejadorErroresNoControlados
 {
@@ -28,7 +28,7 @@ public static partial class clsManejadorErroresNoControlados
         app.UseExceptionHandler(new ExceptionHandlerOptions
         {
             ExceptionHandler = ManejarAsync,
-            // El middleware ya no escribe su propio log ("An unhandled exception..."): este manejador registra la excepción una vez,
+            // El middleware no escribe su propio log ("An unhandled exception..."): este manejador registra la excepción una vez,
             // con el id de correlación.
             SuppressDiagnosticsCallback = _ => true,
         });

@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Cotifly.Infraestructura.Cotizaciones.Repositories;
 
 /// <summary>
-/// Implementación EF Core de <see cref="IClsCotizacionRepository"/> sobre el agregado de HU-021 (ADR-019): la cabecera
+/// Implementación EF Core de <see cref="IClsCotizacionRepository"/> sobre el agregado (ADR-019): la cabecera
 /// (<c>CotizacionesSolicitud</c>) con sus rutas, camiones, mercancías y conexos, leídos con consultas divididas (una por tabla).
 /// </summary>
 public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogger<clsCotizacionRepository>? logger = null) : IClsCotizacionRepository
@@ -48,7 +48,7 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
     {
         ArgumentNullException.ThrowIfNull(envio);
         var entrada = JsonSerializer.Serialize(new { folio = envio.Folio, solicitud_nexo_id = envio.SolicitudNexoId.Trim() });
-        // HU-031.1 (#194): equivalencias_vehiculo solo si el alias tradujo algún código (las filas anteriores no la traen: vacío).
+        // equivalencias_vehiculo solo si el alias tradujo algún código (las filas viejas no la traen: vacío).
         var salida = envio.EquivalenciasVehiculo.Count == 0
             ? JsonSerializer.Serialize(new { codigos_cubicador = envio.CodigosCubicadorEnviados })
             : JsonSerializer.Serialize(new { codigos_cubicador = envio.CodigosCubicadorEnviados, equivalencias_vehiculo = envio.EquivalenciasVehiculo });
@@ -244,7 +244,7 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
             .Where(c => c.Id == cotizacionId && c.UpdatedAt == updatedAtLeido
                         && (c.EstadoCosteo == EstadoCosteo.ErrorEnvio || c.EstadoCosteo == EstadoCosteo.PendienteEnvio))
             .ExecuteUpdateAsync(
-                // HU-023.3 (#158): el reclamo sube versionNegocio, así ninguna mutación con un If-Match anterior (recalcular camiones,
+                // El reclamo sube versionNegocio, así ninguna mutación con un If-Match anterior (recalcular camiones,
                 // margen, conexos) se guarda mientras el reenvío está en curso.
                 s => s.SetProperty(c => c.EstadoCosteo, (EstadoCosteo?)EstadoCosteo.PendienteEnvio).SetProperty(c => c.UpdatedAt, ahora)
                     .SetProperty(c => c.VersionNegocio, c => c.VersionNegocio + 1),
@@ -348,7 +348,7 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
         LeerAgregadoAsync(() => ConAgregado().FirstOrDefaultAsync(c => c.Id == id && c.UsuarioId == usuarioId, cancellationToken), cancellationToken);
 
     /// <summary>
-    /// HU-021: el agregado se lee con una consulta por tabla (cabecera, rutas, camiones, mercancías, conexos) mientras otra petición
+    /// El agregado se lee con una consulta por tabla (cabecera, rutas, camiones, mercancías, conexos) mientras otra petición
     /// puede estar guardando el mismo agregado en una transacción; SQL Server puede elegir la lectura como víctima de un interbloqueo
     /// (error 1205). Fuera de una transacción la lectura no tiene efectos y se repite hasta tres veces; dentro de una, el error sube
     /// (SQL Server ya revirtió la transacción).
@@ -426,13 +426,13 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
         ArgumentNullException.ThrowIfNull(usuarioIds);
         ArgumentOutOfRangeException.ThrowIfLessThan(limite, 1);
         List<Guid?> ids = [.. usuarioIds.Distinct().Select(id => (Guid?)id)];
-        // HU-037.3 (#211): el director sin regional pide los de TODOS los usuarios. EF.Parameter manda la lista como un solo parámetro
+        // El director sin regional pide los de TODOS los usuarios. EF.Parameter manda la lista como un solo parámetro
         // (OPENJSON), sin el tope de 2100 parámetros de SQL Server que tendría una lista expandida.
         return ids.Count == 0 ? [] : await ListarConLineaAsync(c => EF.Parameter(ids).Contains(c.UsuarioId), limite, cancellationToken);
     }
 
     /// <summary>
-    /// Proyección de "Mis cotizaciones" (y del listado regional, HU-016.1): cabeceras que cumplen <paramref name="filtro"/>, de la más
+    /// Proyección de "Mis cotizaciones" (y del listado regional): cabeceras que cumplen <paramref name="filtro"/>, de la más
     /// reciente a la más antigua, con la línea de negocio y el margen de su ruta 1 (o "Varias").
     /// </summary>
     private async Task<IReadOnlyList<clsCotizacionConLinea>> ListarConLineaAsync(
@@ -448,7 +448,7 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
         var ids = cabeceras.Select(c => c.Id).ToList();
         var rutas = await contexto.CotizacionLineasSolicitud.AsNoTracking()
             .Where(r => ids.Contains(r.CotizacionSolicitudId))
-            // HU-018.2 (#294): también el origen/destino, el peso y el valor de la mercancía de cada ruta, para la carga del resumen.
+            // También el origen/destino, el peso y el valor de la mercancía de cada ruta, para la carga del resumen.
             .Select(r => new
             {
                 r.CotizacionSolicitudId, r.Orden, r.LineaNegocioId, r.MargenAplicado, r.OrigenMargen,
@@ -465,13 +465,13 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
                 return new clsCotizacionConLinea(c, null);
             }
 
-            // Una ruta sin línea de negocio no cuenta para "Varias" (HU-021.9).
+            // Una ruta sin línea de negocio no cuenta para "Varias".
             var primera = suyas[0];
             var conLinea = suyas.Select(r => r.LineaNegocioId).OfType<int>().Distinct().ToList();
             var linea = conLinea.Count > 1
                 ? clsCotizacionConLinea.Varias
                 : conLinea.Count == 1 ? lineasNegocio.GetValueOrDefault(conLinea[0]) : null;
-            // HU-018.2 (#294): la carga del resumen desde la misma proyección (sin cargar el agregado).
+            // La carga del resumen desde la misma proyección (sin cargar el agregado).
             var carga = clsCargaCotizacion.Desde(suyas.Select(
                 r => new clsCargaCotizacion.Ruta(r.Orden, r.OrigenNombre, r.DestinoNombre, r.PesoKg, r.ValorMercancia)));
             return new clsCotizacionConLinea(c, linea, primera.MargenAplicado, primera.OrigenMargen) { Carga = carga };
@@ -479,7 +479,7 @@ public sealed class clsCotizacionRepository(clsCotiflyDbContext contexto, ILogge
     }
 
     /// <summary>
-    /// Cabeceras que cumplen <paramref name="filtro"/> (HU-014.1, mediano plazo): si una fila trae un código fuera de catálogo (el
+    /// Cabeceras que cumplen <paramref name="filtro"/>: si una fila trae un código fuera de catálogo (el
     /// convertidor del enum la rechaza), en vez de tumbar toda la lista se leen una por una y se omiten las inválidas (queda en el log).
     /// </summary>
     private async Task<List<clsCotizacionSolicitud>> CabecerasToleranteAsync(

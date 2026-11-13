@@ -1,7 +1,7 @@
 namespace Cotifly.Aplicacion.Agente.DTOs;
 
 /// <summary>
-/// Un mensaje del comercial para el asistente por folio (HU-013.6, #102): la sesión queda ligada al comercial y al folio.
+/// Un mensaje del comercial para el asistente por folio: la sesión queda ligada al comercial y al folio.
 /// </summary>
 /// <param name="Mensaje">Texto del comercial (máximo 8000 caracteres).</param>
 /// <param name="SpaceId">Agrupa la conversación de la consola (<c>web/{sesion_id}</c>).</param>
@@ -15,7 +15,7 @@ public sealed record clsSolicitudTurnoFolio(string Mensaje, string SpaceId, stri
 /// <param name="Iteraciones">Llamadas al modelo del turno (incluida la llamada final).</param>
 /// <param name="HerramientasInvocadas">Herramientas ejecutadas, en orden (las inexistentes que pidió el modelo no cuentan).</param>
 /// <param name="DetenerPor">Motivo de fin del loop que informó el proveedor (<c>stop</c>, <c>length</c>...), o <c>propuesta</c> si una ronda
-/// de herramientas armó una propuesta y el turno pasó directo a la respuesta final (HU-013.16).</param>
+/// de herramientas armó una propuesta y el turno pasó directo a la respuesta final.</param>
 /// <param name="Salidas">Resultado de cada herramienta pedida, en orden (incluye las rechazadas y las inexistentes).</param>
 public sealed record clsResultadoTurno(
     string Texto,
@@ -25,7 +25,7 @@ public sealed record clsResultadoTurno(
     IReadOnlyList<clsResultadoHerramienta> Salidas)
 {
     /// <summary>
-    /// Respuesta final estructurada y validada (HU-003.10, #16): tipo de interacción, confirmación y acciones sugeridas. Si no se
+    /// Respuesta final estructurada y validada: tipo de interacción, confirmación y acciones sugeridas. Si no se
     /// indica, una respuesta conversacional con <see cref="Texto"/>.
     /// </summary>
     public clsRespuestaAgenteEstructurada Respuesta { get; init; } =
@@ -41,12 +41,12 @@ public sealed record clsResultadoTurno(
     public int ReintentosRespuesta { get; init; }
 
     /// <summary>
-    /// Acción que el asistente por folio PROPUSO en el turno (HU-013.6, #102), armada por el servidor, o <c>null</c>.
+    /// Acción que el asistente por folio PROPUSO en el turno, armada por el servidor, o <c>null</c>.
     /// </summary>
     public clsAccionPropuesta? AccionPropuesta { get; init; }
 
     /// <summary>
-    /// HU-013.16 (#126): de dónde salió la respuesta final: <c>loop</c> (la respuesta sin herramientas ya era válida),
+    /// De dónde salió la respuesta final: <c>loop</c> (la respuesta sin herramientas ya era válida),
     /// <c>llamada_final</c> (la llamada aparte del validador) o <c>null</c> en un turno que no llegó a cerrarse.
     /// </summary>
     public string? Cierre { get; init; }
@@ -54,10 +54,8 @@ public sealed record clsResultadoTurno(
 
 /// <summary>
 /// Nombres de las herramientas tal como las ve el modelo (los del Python, en snake_case). Los parámetros van en camelCase (firma
-/// unificada del plan: <c>lineaNegocio</c>, <c>pesoKg</c>...). El agente cotizador legado (plugin <c>cotizador</c>) se retiró en
-/// HU-013.9 (#105): sus herramientas <c>buscar_cliente</c>, <c>resolver_municipio</c>, <c>buscar_tarifa</c>, <c>obtener_margen</c>,
-/// <c>calcular_precio</c> y <c>enviar_correo</c> ya no existen (endurecimiento B de #199: se quitaron sus constantes);
-/// <c>consultar_cotizacion</c> la usa el asistente por folio y otras se citan en las acciones sugeridas.
+/// unificada del plan: <c>lineaNegocio</c>, <c>pesoKg</c>...). Del plugin <c>cotizador</c> solo quedan los nombres que se usan:
+/// <c>consultar_cotizacion</c> la usa el asistente por folio y las otras se citan en las acciones sugeridas.
 /// </summary>
 public static class clsNombresHerramientas
 {
@@ -66,7 +64,7 @@ public static class clsNombresHerramientas
     public const string GenerarPdf = "generar_pdf";
     public const string ConsultarCotizacion = "consultar_cotizacion";
 
-    /// <summary>Plugin del asistente por folio (HU-013.6, #102): solo lectura y propuesta.</summary>
+    /// <summary>Plugin del asistente por folio: solo lectura y propuesta.</summary>
     public const string PluginAsistente = "asistente";
     public const string ProponerAjusteMargen = "proponer_ajuste_margen";
     public const string ProponerReSolicitud = "proponer_re_solicitud";

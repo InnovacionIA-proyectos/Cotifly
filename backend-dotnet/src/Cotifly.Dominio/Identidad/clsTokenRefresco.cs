@@ -6,8 +6,8 @@ namespace Cotifly.Dominio.Identidad;
 /// Refresh token opaco (<c>dbo_cotifly.TokensRefresco</c>, script 0002, ADR-009). Solo se guarda el
 /// SHA-256 en hexadecimal (64 caracteres, minúsculas). Todos los tokens de una misma cadena de
 /// rotación comparten <see cref="FamiliaId"/>: si se reutiliza uno ya rotado se revoca la familia.
-/// La rotación atómica (<c>UPDATE</c> condicional) es de la implementación de #12. HU-040.1 (#229, script 16):
-/// <see cref="RolSesion"/> guarda el rol interno con el que se emitió la sesión, para que el refresh lo conserve.
+/// La rotación atómica (<c>UPDATE</c> condicional) la hace la persistencia.
+/// <see cref="RolSesion"/> (script 16) guarda el rol interno con el que se emitió la sesión, para que el refresh lo conserve.
 /// </summary>
 public sealed class clsTokenRefresco
 {
@@ -28,14 +28,14 @@ public sealed class clsTokenRefresco
     public Guid? ReemplazadoPorId { get; private set; }
 
     /// <summary>
-    /// HU-040.1 (#229): rol interno de la sesión (columna <c>rolSesion</c>, script 16). <c>null</c> en los refresh emitidos antes
+    /// Rol interno de la sesión (columna <c>rolSesion</c>, script 16). <c>null</c> en los refresh emitidos antes
     /// del 16. La rotación lo hereda.
     /// </summary>
     public RolInterno? RolSesion { get; private set; }
 
     /// <summary>
     /// Emite un token para el usuario. <paramref name="familiaId"/> nulo inicia una familia nueva (login).
-    /// <paramref name="rolSesion"/> es el rol interno de la sesión (HU-040.1).
+    /// <paramref name="rolSesion"/> es el rol interno de la sesión.
     /// </summary>
     public static clsResultado<clsTokenRefresco> Emitir(
         Guid usuarioId, string tokenHash, DateTimeOffset ahora, TimeSpan vigencia, Guid? familiaId = null, RolInterno? rolSesion = null)

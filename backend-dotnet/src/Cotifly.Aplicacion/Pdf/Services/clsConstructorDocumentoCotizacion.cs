@@ -26,7 +26,7 @@ public static class clsConstructorDocumentoCotizacion
     /// Moneda de la cotización (obligatoria: <c>COP</c> o <c>USD</c>) para las filas y servicios sin moneda propia (<c>USD</c> → <c>US$</c>).
     /// </param>
     /// <param name="trmAplicada">
-    /// TRM aplicada en la cotización (HU-012.3): 0 en COP; en USD debe ser &gt; 0 (si no, <c>PDF_PAYLOAD_INVALIDO</c>: no hay un PDF en dólares
+    /// TRM aplicada en la cotización: 0 en COP; en USD debe ser &gt; 0 (si no, <c>PDF_PAYLOAD_INVALIDO</c>: no hay un PDF en dólares
     /// sin la TRM de la nota) y agrega la nota de TRM mínima (<see cref="clsTextosEstandar.NotaTrmMinima"/>). Es la persistida con la
     /// cotización, nunca la del día en que se genera el PDF.
     /// </param>
@@ -64,12 +64,12 @@ public static class clsConstructorDocumentoCotizacion
         }
 
         // Incluye / no incluye: de la tarifa (o de la primera sección en multi), de "textos" o estándar. Los servicios
-        // conexos itemizados (HU-003.5) mandan sobre cualquier lista de texto.
+        // conexos itemizados mandan sobre cualquier lista de texto.
         var fuenteListas = payload.Tarifa ?? clsValidadorCotizacionPdfPayload.SeccionesDe(payload).FirstOrDefault();
         var incluye = Itemizado(payload, fuenteListas, monedaPorDefecto)
                       ?? Primera(fuenteListas?.Incluye, payload.Textos?.Incluye)
                       ?? textos.Incluye;
-        // #173: "no incluye" nunca nombra un servicio que sí va itemizado (p. ej. "Acompañamiento vehicular" con el conexo
+        // "No incluye" nunca nombra un servicio que sí va itemizado (p. ej. "Acompañamiento vehicular" con el conexo
         // "Acompañante vehicular en moto"): la lista se depura contra los conexos reales de la cotización.
         var noIncluye = SinLoIncluido(Primera(fuenteListas?.NoIncluye, payload.Textos?.NoIncluye) ?? textos.NoIncluye, payload.ServiciosConexos);
 
@@ -97,7 +97,7 @@ public static class clsConstructorDocumentoCotizacion
             NotaGeneral = esMulti
                 ? null
                 : clsTextoSeguro.Limpiar(payload.Tarifa?.NotaGeneral) ?? clsTextoSeguro.Limpiar(payload.Textos?.NotaGeneral)
-                  // #173: con las horas reales de la captura y contra los conexos incluidos (cargue / descargue).
+                  // Con las horas reales de la captura y contra los conexos incluidos (cargue / descargue).
                   ?? clsTextosEstandar.NotaGeneral(payload.HorasCargue, payload.HorasDescargue,
                       Cubre("Cargue", payload.ServiciosConexos), Cubre("Descargue", payload.ServiciosConexos)),
             NotaDecreto = esMulti ? null : clsTextoSeguro.Limpiar(payload.NotaDecreto) ?? clsTextosEstandar.NotaDecreto,
@@ -303,7 +303,7 @@ public static class clsConstructorDocumentoCotizacion
     private const int LargoRaiz = 6;
 
     /// <summary>
-    /// #173: quita de "no incluye" lo que cubre un servicio conexo incluido. Un texto queda cubierto si TODAS sus palabras significativas
+    /// Quita de "no incluye" lo que cubre un servicio conexo incluido. Un texto queda cubierto si TODAS sus palabras significativas
     /// (4 letras o más, sin tildes ni mayúsculas) empiezan igual (<see cref="LargoRaiz"/> letras) que alguna palabra de la descripción de
     /// UN mismo conexo: "Acompañamiento vehicular" ↔ "Acompañante vehicular en moto", pero "Cargues y descargues" no se quita con un conexo
     /// "Cargue" solo.

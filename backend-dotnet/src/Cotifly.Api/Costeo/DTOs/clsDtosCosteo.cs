@@ -11,8 +11,8 @@ namespace Cotifly.Api.Costeo.DTOs;
 
 /// <summary>
 /// <c>SolicitudCosteoWeb</c> (snake_case por <see cref="Comun.clsJsonSnakeCaseAttribute"/>): el formulario de
-/// <c>POST /web/solicitudes-costeo</c>. HU-021.6: el formulario captura <see cref="Rutas"/> (<c>RutaCapturaWeb</c>); los campos de
-/// ruta al nivel raíz son el formato plano anterior (una sola ruta, obsoleto) y se aceptan solo sin <c>rutas</c>. Los límites los valida
+/// <c>POST /web/solicitudes-costeo</c>. El formulario captura <see cref="Rutas"/> (<c>RutaCapturaWeb</c>); los campos de
+/// ruta al nivel raíz son el formato plano obsoleto (una sola ruta) y se aceptan solo sin <c>rutas</c>. Los límites los valida
 /// el dominio, no MVC, para responder <c>SOLICITUD_COSTEO_INVALIDA</c> con todos los campos en <c>detalle.errores</c>.
 /// </summary>
 public sealed class clsSolicitudCosteoWebRequest
@@ -24,19 +24,19 @@ public sealed class clsSolicitudCosteoWebRequest
     /// <summary>Línea de negocio por defecto de las rutas (cada ruta puede traer la suya).</summary>
     public string? LineaNegocio { get; init; }
 
-    /// <summary>HU-021.6: las rutas de la solicitud (al menos una). Sin ellas se lee el formato plano anterior como una sola ruta.</summary>
+    /// <summary>Las rutas de la solicitud (al menos una). Sin ellas se lee el formato plano obsoleto como una sola ruta.</summary>
     public IReadOnlyList<clsRutaCapturaWebRequest?>? Rutas { get; init; }
-    /// <summary>ISO 8601; sin zona se interpreta en hora de Bogotá (G4, <see cref="Comun.clsConvertidorFechaBogota"/>).</summary>
+    /// <summary>ISO 8601; sin zona se interpreta en hora de Bogotá (<see cref="Comun.clsConvertidorFechaBogota"/>).</summary>
     [JsonConverter(typeof(Comun.clsConvertidorFechaBogota))]
     public DateTimeOffset? Deadline { get; init; }
     /// <summary>
-    /// Retirado del contrato (decisión 1 de HU-021, #138): ya no está en <c>openapi.yaml</c>. Si un frontend anterior lo manda, se ignora
+    /// Retirado del contrato: no está en <c>openapi.yaml</c>. Si un frontend anterior lo manda, se ignora
     /// sin error y queda un aviso en el log (<see cref="CamposRetirados"/>).
     /// </summary>
     [clsCampoRetirado("decisión 1 de HU-021")]
     public decimal? ValorEstimado { get; init; }
 
-    /// <summary>Retirado del contrato (decisión 1 de HU-021, #138): igual que <see cref="ValorEstimado"/>.</summary>
+    /// <summary>Retirado del contrato: igual que <see cref="ValorEstimado"/>.</summary>
     [clsCampoRetirado("decisión 1 de HU-021")]
     public string? Referencia { get; init; }
 
@@ -48,16 +48,16 @@ public sealed class clsSolicitudCosteoWebRequest
     public decimal? HorasDescargue { get; init; }
     public string? Notas { get; init; }
 
-    // ---- Formato plano anterior (una ruta; obsoleto desde HU-021.6): solo se lee sin 'rutas'.
+    // ---- Formato plano obsoleto (una ruta): solo se lee sin 'rutas'.
     public string? Origen { get; init; }
     public string? Destino { get; init; }
     public int? OrigenMunicipioId { get; init; }
     public int? DestinoMunicipioId { get; init; }
 
-    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
+    /// <summary>El vehículo elegido de la ruta (código de Nexo, ADR-022). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? TipoVehiculo { get; init; }
 
-    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
+    /// <summary>El vehículo elegido de la ruta (código de Nexo, ADR-022). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? Carroceria { get; init; }
     public string? Tipologia { get; init; }
     public string? ClaseViaje { get; init; }
@@ -75,7 +75,7 @@ public sealed class clsSolicitudCosteoWebRequest
     public decimal? ValorMercancia { get; init; }
     public IReadOnlyList<clsPosicionCargaWebRequest?>? Posiciones { get; init; }
 
-    /// <summary><c>COP</c> (por defecto) o <c>USD</c> (HU-013.7, ADR-014 §5); otro valor lo rechaza el caso de uso (<c>SOLICITUD_COSTEO_INVALIDA</c>).</summary>
+    /// <summary><c>COP</c> (por defecto) o <c>USD</c> (ADR-014 §5); otro valor lo rechaza el caso de uso (<c>SOLICITUD_COSTEO_INVALIDA</c>).</summary>
     public string? Moneda { get; init; }
 
     /// <summary>
@@ -177,9 +177,9 @@ public sealed class clsSolicitudCosteoWebRequest
 }
 
 /// <summary>
-/// <c>RutaCapturaWeb</c> (HU-021.6): una ruta del formulario. Origen y destino con su id de municipio de <c>GET /web/municipios</c>
+/// <c>RutaCapturaWeb</c>: una ruta del formulario. Origen y destino con su id de municipio de <c>GET /web/municipios</c>
 /// (obligatorio; sin él, Cotifly lo resuelve por el nombre y si es ambiguo responde el error con los candidatos) y una copia del
-/// nombre; igual las ciudades de devolución y de levante del contenedor. HU-032 (#197): con el vehículo elegido (respaldo del cubicador).
+/// nombre; igual las ciudades de devolución y de levante del contenedor. Con el vehículo elegido (respaldo del cubicador).
 /// </summary>
 public class clsRutaCapturaWebRequest
 {
@@ -209,17 +209,17 @@ public class clsRutaCapturaWebRequest
     public decimal? PesoKg { get; init; }
 
     /// <summary>
-    /// HU-030.1 (#184): peso total de la ruta CON la tara de los contenedores (kg), opcional y solo con <c>clase_viaje = Contenedor</c>;
+    /// Peso total de la ruta CON la tara de los contenedores (kg), opcional y solo con <c>clase_viaje = Contenedor</c>;
     /// nunca menor que <see cref="PesoKg"/>. Valor inicial sugerido: el peso de carga. Va a Nexo repartido por camión; no al cubicador.
     /// </summary>
     public decimal? PesoConTaraKg { get; init; }
     public IReadOnlyList<clsPosicionCargaWebRequest?>? Mercancias { get; init; }
     public IReadOnlyList<clsConexoCapturaWebRequest?>? ServiciosConexos { get; init; }
 
-    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
+    /// <summary>El vehículo elegido de la ruta (código de Nexo, ADR-022). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? TipoVehiculo { get; init; }
 
-    /// <summary>HU-032 (#197, ADR-022): el vehículo elegido de la ruta (código de Nexo). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
+    /// <summary>El vehículo elegido de la ruta (código de Nexo, ADR-022). Obligatorio sin mercancías cubicables, salvo en Contenedor (<c>VEHICULO_REQUERIDO</c>); es el respaldo del cubicador: si el cubicador asigna, manda el cubicador. La carrocería es opcional.</summary>
     public string? Carroceria { get; init; }
 
     public clsLineaLicitacionEntrada AEntrada() => new(
@@ -255,7 +255,7 @@ public class clsRutaCapturaWebRequest
         clsConexoCapturaWebRequest.AEntradas(ServiciosConexos));
 }
 
-/// <summary><c>ConexoCapturaWeb</c> (HU-021.6): un servicio del catálogo de Nexo para la ruta; el precio lo pone Cotifly (costo de Nexo).</summary>
+/// <summary><c>ConexoCapturaWeb</c>: un servicio del catálogo de Nexo para la ruta; el precio lo pone Cotifly (costo de Nexo).</summary>
 public sealed class clsConexoCapturaWebRequest
 {
     public string? IdServicioConexo { get; init; }
@@ -267,23 +267,23 @@ public sealed class clsConexoCapturaWebRequest
 
 /// <summary>
 /// <c>MercanciaWeb</c> / <c>PosicionCargaWeb</c>: una mercancía (bulto) en centímetros y kilogramos; <c>cantidad</c> por defecto 1.
-/// HU-023.3 (#158): <c>codigo_mercancia</c> (catálogo del cubicador, <c>GET /web/tipos-mercancia</c>) es obligatorio en una captura nueva.
-/// <c>id_tipo_mercancia</c> (uuid) queda <b>obsoleto</b>: durante la transición se acepta y se traduce al código con el catálogo.
+/// <c>codigo_mercancia</c> (catálogo del cubicador, <c>GET /web/tipos-mercancia</c>) es obligatorio en una captura nueva.
+/// <c>id_tipo_mercancia</c> (uuid) es <b>obsoleto</b>: se acepta y se traduce al código con el catálogo.
 /// <c>nombre_mercancia</c> es la copia de su nombre (<c>descripcion</c> es el nombre anterior del mismo campo).
 /// </summary>
 public sealed class clsPosicionCargaWebRequest
 {
-    /// <summary>HU-023.3: código del catálogo del cubicador (por ejemplo <c>BEBIDAS</c>).</summary>
+    /// <summary>Código del catálogo del cubicador (por ejemplo <c>BEBIDAS</c>).</summary>
     public string? CodigoMercancia { get; init; }
 
-    /// <summary>Obsoleto (HU-023.3): el uuid del catálogo; se traduce al código. Usar <see cref="CodigoMercancia"/>.</summary>
+    /// <summary>Obsoleto: el uuid del catálogo; se traduce al código. Usar <see cref="CodigoMercancia"/>.</summary>
     public Guid? IdTipoMercancia { get; init; }
     public string? NombreMercancia { get; init; }
     public string? Descripcion { get; init; }
     public int Cantidad { get; init; } = 1;
 
     /// <summary>
-    /// Medidas en cm. HU-032 (#197): opcionales. Sin ninguna (ausentes o <c>null</c>) y sin <c>codigo_mercancia</c> la mercancía es "no
+    /// Medidas en cm, opcionales. Sin ninguna (ausentes o <c>null</c>) y sin <c>codigo_mercancia</c> la mercancía es "no
     /// cubicable": se guarda, no viaja a Nexo como posición y la ruta usa el vehículo elegido. Si viene una, vienen las tres.
     /// </summary>
     public decimal? LargoCm { get; init; }
@@ -301,7 +301,7 @@ public sealed class clsPosicionCargaWebRequest
 }
 
 /// <summary>
-/// <c>SeleccionServiciosConexos</c> (HU-005.7; por ruta desde HU-021.8, #135): <c>conexos</c> (los que quedan en la ruta, con su cantidad;
+/// <c>SeleccionServiciosConexos</c> (por ruta): <c>conexos</c> (los que quedan en la ruta, con su cantidad;
 /// los demás se quitan) o <c>incluidos</c> (los ids que se conservan; los demás se quitan), y la ruta (<c>linea_orden</c> o
 /// <c>linea_solicitud_id</c>). Ver <see cref="clsCambioServiciosConexos"/>.
 /// </summary>
@@ -322,7 +322,7 @@ public sealed record clsSeleccionServiciosConexosWebRequest(
 public sealed record clsCantidadConexoWebRequest(string? Id, decimal? Cantidad);
 
 /// <summary>
-/// <c>AjusteMargenWeb</c> (HU-013.2; por ruta desde HU-021.8, #135): <c>margen</c> (fracción de 0 a 0,99), <c>justificacion</c>
+/// <c>AjusteMargenWeb</c> (por ruta): <c>margen</c> (fracción de 0 a 0,99), <c>justificacion</c>
 /// (obligatoria por debajo del margen sugerido de la ruta) y la ruta (<c>linea_orden</c> o <c>linea_solicitud_id</c>; opcional si la
 /// cotización tiene una sola). Los límites los valida el dominio para responder <c>AJUSTE_MARGEN_INVALIDO</c>,
 /// <c>JUSTIFICACION_REQUERIDA</c>, <c>RUTA_REQUERIDA</c> o <c>RUTA_INEXISTENTE</c>.
@@ -330,13 +330,13 @@ public sealed record clsCantidadConexoWebRequest(string? Id, decimal? Cantidad);
 public sealed record clsAjusteMargenWebRequest(decimal? Margen, string? Justificacion, int? LineaOrden = null, Guid? LineaSolicitudId = null);
 
 /// <summary>
-/// <c>SeguroRutaWeb</c> (HU-045.2, #264): <c>incluye_seguro</c> (obligatorio: <c>true</c> incluye el seguro de la mercancía en la ruta,
+/// <c>SeguroRutaWeb</c>: <c>incluye_seguro</c> (obligatorio: <c>true</c> incluye el seguro de la mercancía en la ruta,
 /// <c>false</c> lo quita) y la ruta (<c>linea_orden</c> o <c>linea_solicitud_id</c>; sin ninguno, la única ruta), como el ajuste de margen.
 /// </summary>
 public sealed record clsSeguroRutaWebRequest(bool? IncluyeSeguro, int? LineaOrden = null, Guid? LineaSolicitudId = null);
 
 /// <summary>
-/// <c>FinalizarWeb</c> (HU-046.3, #269; contrato del 2026-11-10), cuerpo OPCIONAL de <c>POST .../finalizar</c>: <c>justificacion</c> (de 10 a
+/// <c>FinalizarWeb</c>, cuerpo OPCIONAL de <c>POST .../finalizar</c>: <c>justificacion</c> (de 10 a
 /// 500 caracteres, sin los espacios de los extremos) para finalizar aunque falte una medida obligatoria de la política de seguros. Salta solo
 /// ese bloqueo y queda auditada; ausente, vacía o solo espacios es como no mandarla.
 /// </summary>
@@ -347,7 +347,7 @@ public sealed record clsFinalizarWebRequest(string? Justificacion);
 public sealed record clsResultadoWebRequest(string? Resultado, string? Motivo, string? Comentario);
 
 /// <summary>
-/// <c>ReSolicitudCosteoWeb</c> (HU-013.4): <c>motivo</c>, <c>datos_carga</c> (<c>DatosCargaWeb</c>; ausente o <c>null</c> = sin cambios) y
+/// <c>ReSolicitudCosteoWeb</c>: <c>motivo</c>, <c>datos_carga</c> (<c>DatosCargaWeb</c>; ausente o <c>null</c> = sin cambios) y
 /// <c>nueva_version</c>. <c>datos_carga</c> se lee como JSON para distinguir un campo que no viene (se conserva) de uno en <c>null</c>
 /// (se borra); los límites y la coherencia los valida el dominio con las reglas de la captura.
 /// </summary>
@@ -370,7 +370,7 @@ public sealed record clsReSolicitudCosteoWebRequest(string? Motivo, JsonElement?
 }
 
 /// <summary>
-/// <c>DatosCargaWeb</c> (HU-013.4): los mismos campos de línea que la captura (más las horas de cargue y descargue), solo los que
+/// <c>DatosCargaWeb</c>: los mismos campos de línea que la captura (más las horas de cargue y descargue), solo los que
 /// cambian. Origen, destino, cliente y línea de negocio no se cambian por esta vía.
 /// </summary>
 public sealed class clsDatosCargaWebRequest
@@ -385,12 +385,12 @@ public sealed class clsDatosCargaWebRequest
     public bool? RetornaContenedor { get; init; }
     public string? CiudadDevolucionContenedor { get; init; }
 
-    /// <summary>HU-028 (#186), defecto B: el id del municipio de devolución, como en la captura.</summary>
+    /// <summary>El id del municipio de devolución, como en la captura.</summary>
     public int? CiudadDevolucionMunicipioId { get; init; }
     public bool? LevanteContenedorDiferente { get; init; }
     public string? CiudadLevanteContenedor { get; init; }
 
-    /// <summary>HU-028 (#186), defecto B: el id del municipio de levante.</summary>
+    /// <summary>El id del municipio de levante.</summary>
     public int? CiudadLevanteMunicipioId { get; init; }
     public decimal? ValorAprovisionamiento { get; init; }
     public decimal? HorasCargue { get; init; }
@@ -398,7 +398,7 @@ public sealed class clsDatosCargaWebRequest
     public decimal? PesoKg { get; init; }
     public decimal? ValorMercancia { get; init; }
 
-    /// <summary>HU-030.1 (#184): peso total con tara de la ruta de contenedor (<c>null</c> lo quita).</summary>
+    /// <summary>Peso total con tara de la ruta de contenedor (<c>null</c> lo quita).</summary>
     public decimal? PesoConTaraKg { get; init; }
     public IReadOnlyList<clsPosicionCargaWebRequest>? Posiciones { get; init; }
 
@@ -462,7 +462,7 @@ public sealed class clsDatosCargaWebRequest
             PesoConTaraKg = leido.PesoConTaraKg,
             Posiciones = leido.Posiciones is null
                 ? null
-                // HU-028 (#186), defecto A: con codigo_mercancia y nombre_mercancia (antes se perdían y la -vN caía en el respaldo).
+                // Con codigo_mercancia y nombre_mercancia, para que la -vN no caiga en el respaldo.
                 : [.. leido.Posiciones.Select(p => p is null ? null! : p.APosicion())],
         };
     }

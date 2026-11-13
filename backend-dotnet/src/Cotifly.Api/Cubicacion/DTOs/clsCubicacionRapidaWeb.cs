@@ -5,7 +5,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Api.Cubicacion.DTOs;
 
 /// <summary>
-/// Opción D (D3, E2E 2026-10-16): cuerpo del 202 de <c>POST /web/cubicacion</c> (<c>CubicacionEnProceso</c>):
+/// Cuerpo del 202 de <c>POST /web/cubicacion</c> (<c>CubicacionEnProceso</c>):
 /// <c>{id, estado: "en_proceso", consultar_en: "/web/cubicacion/{id}"}</c>. Va con <c>Location</c> y <c>Retry-After</c>.
 /// </summary>
 public sealed record clsCubicacionEnProcesoWeb(Guid Id, string Estado, string ConsultarEn);

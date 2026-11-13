@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Licitaciones.Controllers;
 
 /// <summary>
-/// HU-044.4 (#255, ADR-028 y ADR-029): normalización de los textos del Excel de licitación con NEXO. El front no puede llamar a NEXO
+/// Normalización de los textos del Excel de licitación con NEXO (ADR-028 y ADR-029). El front no puede llamar a NEXO
 /// (CORS e identidad por header): Cotifly es el intermediario, con la identidad del comercial. Rol Comercial (política de la base).
 /// </summary>
 [Route("web/licitaciones")]

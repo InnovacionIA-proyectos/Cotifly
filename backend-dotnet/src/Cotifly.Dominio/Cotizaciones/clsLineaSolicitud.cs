@@ -5,7 +5,7 @@ using Cotifly.Dominio.Precio;
 namespace Cotifly.Dominio.Cotizaciones;
 
 /// <summary>
-/// Ruta de una solicitud (<c>dbo_cotifly.CotizacionLineasSolicitud</c>; scripts 0005, 0009 y 0010; HU-021, ADR-019): lo que es igual
+/// Ruta de una solicitud (<c>dbo_cotifly.CotizacionLineasSolicitud</c>; scripts 0005, 0009 y 0010; ADR-019): lo que es igual
 /// para todos sus camiones (origen y destino, condiciones del contenedor, horas, valores), sus mercancías y conexos, los totales de
 /// costo, el margen de su línea de negocio y su precio. Los costos son por camión (<see cref="Vehiculos"/>) y el precio es por ruta:
 /// <list type="bullet">
@@ -13,7 +13,7 @@ namespace Cotifly.Dominio.Cotizaciones;
 /// sus camiones; <see cref="CostoServiciosConexos"/> suma <c>precio × cantidad</c> de sus conexos;</item>
 /// <item><see cref="CostoFinal"/> = la suma de los cuatro (costo interno), y <see cref="PrecioFinalLinea"/> = <see cref="CostoTransporte"/>
 /// (fletes + retorno + levante) con <see cref="MargenAplicado"/> según <see cref="MetodoCalculo"/> (la fórmula de
-/// <see cref="clsCalculadoraPrecio"/>) + la venta de sus conexos SIN margen (HU-043.2, #251: <see cref="PrecioRutaCon"/>);</item>
+/// <see cref="clsCalculadoraPrecio"/>) + la venta de sus conexos SIN margen (<see cref="PrecioRutaCon"/>);</item>
 /// <item>mientras algún camión no tenga flete, la ruta no tiene costo final ni precio.</item>
 /// </list>
 /// Los totales se GUARDAN y se recalculan con cada cambio (<see cref="RecalcularTotales"/>). El estado resume el de sus camiones
@@ -50,7 +50,7 @@ public sealed partial class clsLineaSolicitud
     /// <summary>Id de <c>tbl_municipios</c> de Nexo del origen.</summary>
     public int? OrigenMunicipioId { get; private set; }
 
-    /// <summary>Nombre del municipio de origen, copiado al capturar (0010, decisión 2 del 2026-10-08).</summary>
+    /// <summary>Nombre del municipio de origen, copiado al capturar (0010).</summary>
     public string? OrigenNombre { get; private set; }
 
     public int? DestinoMunicipioId { get; private set; }
@@ -90,13 +90,13 @@ public sealed partial class clsLineaSolicitud
     public decimal? ValorMercancia { get; private set; }
 
     /// <summary>
-    /// HU-030.1 (#184, script <c>db/scripts/11_peso_con_tara.sql</c>): peso total de la ruta CON la tara de los contenedores, tal como lo
-    /// escribió el comercial (solo en una ruta <c>Contenedor</c>, #250); <c>null</c> = sin tara. Es lo que viaja a Nexo como peso (repartido
+    /// Peso total de la ruta CON la tara de los contenedores (script <c>db/scripts/11_peso_con_tara.sql</c>), tal como lo
+    /// escribió el comercial (solo en una ruta <c>Contenedor</c>); <c>null</c> = sin tara. Es lo que viaja a Nexo como peso (repartido
     /// por camión, <see cref="PesoLineaNexo"/>; DU §8: <c>peso</c> es el total con tara); al cubicador nunca va.
     /// </summary>
     public decimal? PesoConTaraKg { get; private set; }
 
-    /// <summary>Lo que vale UN levante de contenedor en esta ruta (lo digita el comercial; se copia a cada camión, decisión 4).</summary>
+    /// <summary>Lo que vale UN levante de contenedor en esta ruta (lo digita el comercial; se copia a cada camión).</summary>
     public decimal? ValorLevanteContenedor { get; private set; }
 
     public decimal? CostoFletesTotal { get; private set; }
@@ -121,70 +121,70 @@ public sealed partial class clsLineaSolicitud
     public decimal? PrecioFinalLinea { get; private set; }
 
     /// <summary>
-    /// HU-045.2 (#264, script <c>db/scripts/20_seguro_mercancia.sql</c>): ¿la ruta incluye el seguro de la mercancía (póliza específica)?
+    /// ¿La ruta incluye el seguro de la mercancía (póliza específica, script 20)?
     /// Lo marca el comercial en el costeo (<see cref="clsCotizacionSolicitud.CambiarSeguro"/>). Ver <see cref="CostoSeguro"/>.
     /// </summary>
     public bool IncluyeSeguro { get; private set; }
 
     /// <summary>
-    /// HU-045.2 (#264): la tasa (fracción: 0.003450 = 0,345 %) con que se calculó <see cref="CostoSeguro"/>: copia de la vigente de
-    /// <c>TarifasSeguro</c> al marcar el seguro y otra vez si cambia <see cref="ValorMercancia"/> (decisión 5). Un cambio de la tasa vigente
+    /// La tasa (fracción: 0.003450 = 0,345 %) con que se calculó <see cref="CostoSeguro"/>: copia de la vigente de
+    /// <c>TarifasSeguro</c> al marcar el seguro y otra vez si cambia <see cref="ValorMercancia"/>. Un cambio de la tasa vigente
     /// no la toca. <c>null</c> sin seguro, o con el seguro y sin valor de la mercancía.
     /// </summary>
     public decimal? TasaSeguroAplicada { get; private set; }
 
     /// <summary>
-    /// HU-045.2 (#264): el seguro de la mercancía en PESOS = <c>ValorMercancia × TasaSeguroAplicada</c> sin redondear a
+    /// El seguro de la mercancía en PESOS = <c>ValorMercancia × TasaSeguroAplicada</c> sin redondear a
     /// pesos (en centavos, la escala de la columna). NO entra en
-    /// <see cref="CostoFinal"/> ni lleva margen: se suma al precio de la ruta (<see cref="PrecioRutaCon"/>, decisión 1), convertido con la TRM
-    /// en una cotización en dólares (<see cref="ValorSeguro"/>, decisión 2). <c>null</c> sin seguro o sin valor de la mercancía.
+    /// <see cref="CostoFinal"/> ni lleva margen: se suma al precio de la ruta (<see cref="PrecioRutaCon"/>), convertido con la TRM
+    /// en una cotización en dólares (<see cref="ValorSeguro"/>). <c>null</c> sin seguro o sin valor de la mercancía.
     /// </summary>
     public decimal? CostoSeguro { get; private set; }
 
-    /// <summary>HU-023.3 (script <c>02</c>): la corrida del cubicador de esta ruta (para volver a consultarla); <c>null</c> sin cubicador.</summary>
+    /// <summary>La corrida del cubicador de esta ruta (para volver a consultarla, script <c>02</c>); <c>null</c> sin cubicador.</summary>
     public Guid? IdRecomendacion { get; private set; }
 
-    /// <summary>HU-023.3: qué respondió el cubicador (<c>ASIGNADO</c> o <c>SIN_SELECCION_AUTOMATICA</c>); <c>null</c> sin cubicador.</summary>
+    /// <summary>Qué respondió el cubicador (<c>ASIGNADO</c> o <c>SIN_SELECCION_AUTOMATICA</c>); <c>null</c> sin cubicador.</summary>
     public string? ResultadoCubicacion { get; private set; }
 
-    /// <summary>HU-023.3: por qué no pudo escoger (solo con <c>SIN_SELECCION_AUTOMATICA</c>).</summary>
+    /// <summary>Por qué no pudo escoger (solo con <c>SIN_SELECCION_AUTOMATICA</c>).</summary>
     public string? MotivoSinSeleccion { get; private set; }
 
-    /// <summary>HU-023.3: la ruta va a la Mesa de Costeo por una mercancía condicionada.</summary>
+    /// <summary>La ruta va a la Mesa de Costeo por una mercancía condicionada.</summary>
     public bool Condicionada { get; private set; }
 
     /// <summary>
-    /// HU-032 (#197, ADR-022; script <c>db/scripts/12</c>): el tipo de vehículo que eligió el comercial para la ruta (<c>tipo_vehiculo</c> de
+    /// El tipo de vehículo que eligió el comercial para la ruta (ADR-022; script <c>db/scripts/12</c>; <c>tipo_vehiculo</c> de
     /// la captura), aparte del de sus camiones: es el respaldo del cubicador y lo que la edición y la re-solicitud conservan. Un cambio de la
-    /// Mesa de Costeo en Nexo (D2) cambia el camión, no el elegido. <c>null</c> = no eligió, o la ruta es anterior al 12.
+    /// Mesa de Costeo en Nexo cambia el camión, no el elegido. <c>null</c> = no eligió, o la ruta es anterior al script 12.
     /// </summary>
     public string? TipoVehiculoElegido { get; private set; }
 
-    /// <summary>HU-032 (#197): la carrocería elegida para la ruta (opcional; ver <see cref="TipoVehiculoElegido"/>).</summary>
+    /// <summary>La carrocería elegida para la ruta (opcional; ver <see cref="TipoVehiculoElegido"/>).</summary>
     public string? CarroceriaElegida { get; private set; }
 
     /// <summary>
-    /// HU-023.3: avisos del cubicador de la última llamada (mercancías condicionadas, advertencias y extradimensión). HU-023.5 (#160):
-    /// se guardan en <c>avisosCubicacion</c> (JSON, propuesta <c>db/scripts/pendientes/04</c>) porque la licitación se cubica en segundo plano y el comercial
+    /// Avisos del cubicador de la última llamada (mercancías condicionadas, advertencias y extradimensión). Se guardan en
+    /// <c>avisosCubicacion</c> (JSON, script <c>db/scripts/pendientes/04</c>) porque la licitación se cubica en segundo plano y el comercial
     /// los lee después en <c>GET /web/licitaciones/{folio}</c>. <c>null</c> sin cubicador (o en una ruta anterior al 04).
     /// </summary>
     public clsAvisosCubicacion? AvisosCubicacion { get; private set; }
 
     /// <summary>
-    /// HU-023.5 (#160): estado de la cubicación en segundo plano (<c>null</c> = se cubicó al guardarla). Ver <see cref="Cotizaciones.EstadoCubicacion"/>.
+    /// Estado de la cubicación en segundo plano (<c>null</c> = se cubicó al guardarla). Ver <see cref="Cotizaciones.EstadoCubicacion"/>.
     /// </summary>
     public EstadoCubicacion? EstadoCubicacion { get; private set; }
 
-    /// <summary>HU-023.5: intentos fallidos de cubicar la ruta en segundo plano (se reinicia al reintentar a mano).</summary>
+    /// <summary>Intentos fallidos de cubicar la ruta en segundo plano (se reinicia al reintentar a mano).</summary>
     public int CubicacionIntentos { get; private set; }
 
     /// <summary>
-    /// HU-023.5: desde cuándo una réplica puede tomar la ruta pendiente (<c>null</c> = ya). Sirve de reclamo (una réplica la toma hasta
+    /// Desde cuándo una réplica puede tomar la ruta pendiente (<c>null</c> = ya). Sirve de reclamo (una réplica la toma hasta
     /// <c>ahora + Cubicador:ReclamoSegundos</c>) y de espera entre reintentos.
     /// </summary>
     public DateTimeOffset? CubicacionDisponibleAt { get; private set; }
 
-    /// <summary>HU-023.5: último error de la cubicación en segundo plano (<c>CODIGO: mensaje</c>); <c>null</c> si no falló.</summary>
+    /// <summary>Último error de la cubicación en segundo plano (<c>CODIGO: mensaje</c>); <c>null</c> si no falló.</summary>
     public string? ErrorCubicacion { get; private set; }
 
     /// <summary>Largo máximo de <see cref="ErrorCubicacion"/> (columna <c>errorCubicacion NVARCHAR(500)</c>).</summary>
@@ -207,7 +207,7 @@ public sealed partial class clsLineaSolicitud
 
     /// <summary>
     /// Camiones en un orden estable (<see cref="clsVehiculoLineaSolicitud.EnOrden"/>: <c>ordenVehiculo</c>, o <c>createdAt</c> en las filas
-    /// anteriores a #188): el primero lleva los conexos en Nexo (decisión 3).
+    /// sin número): el primero lleva los conexos en Nexo.
     /// </summary>
     public IReadOnlyList<clsVehiculoLineaSolicitud> VehiculosOrdenados => [.. clsVehiculoLineaSolicitud.EnOrden(_vehiculos)];
 
@@ -220,9 +220,9 @@ public sealed partial class clsLineaSolicitud
 
     /// <summary>
     /// Ruta nueva a partir de una línea de la captura ya validada (<see cref="clsLineaSolicitudCosteo.Errores"/> vacía). Las horas son las
-    /// de la línea o, si no trae, las del <paramref name="encabezado"/> (la cabecera ya no las guarda). Copia las mercancías; los camiones
+    /// de la línea o, si no trae, las del <paramref name="encabezado"/> (la cabecera no las guarda). Copia las mercancías; los camiones
     /// los agrega quien crea la ruta (<see cref="AgregarVehiculo"/>). <paramref name="id"/> fija el id de la ruta (el que ya conoce el
-    /// cubicador, HU-021.5); sin él, uno nuevo.
+    /// cubicador); sin él, uno nuevo.
     /// </summary>
     public static clsLineaSolicitud Desde(
         Guid cotizacionSolicitudId, int orden, int? rutaOrigenIndice, int? lineaNegocioId, clsLineaSolicitudCosteo linea,
@@ -309,18 +309,18 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// Camión nuevo de la ruta con el levante de la ruta copiado (decisión 4; 0 si no aplica). Vehículo y carrocería vacíos = sin
+    /// Camión nuevo de la ruta con el levante de la ruta copiado (0 si no aplica). Vehículo y carrocería vacíos = sin
     /// selección automática (la Mesa de Costeo los resuelve). Recalcula los totales de levante.
     /// </summary>
     public clsVehiculoLineaSolicitud AgregarVehiculo(string? tipoVehiculo, string? carroceria, decimal? pesoKg, Guid? idRecomendacionVehiculo = null) =>
         AgregarVehiculo(new clsCamionPlaneado(tipoVehiculo, carroceria, pesoKg, idRecomendacionVehiculo));
 
     /// <summary>
-    /// Camión nuevo de la ruta a partir del plan (HU-023.3: con el volumen y los porcentajes de llenado del cubicador) y con el levante de
-    /// la ruta copiado. HU-014 (#188): el camión queda numerado en <see cref="clsVehiculoLineaSolicitud.OrdenVehiculo"/> después de los que
+    /// Camión nuevo de la ruta a partir del plan (con el volumen y los porcentajes de llenado del cubicador) y con el levante de
+    /// la ruta copiado. El camión queda numerado en <see cref="clsVehiculoLineaSolicitud.OrdenVehiculo"/> después de los que
     /// ya tiene la ruta (1..n en una ruta nueva o recalculada, porque <see cref="ReemplazarCamiones"/> la vacía antes); nunca repite un
     /// número, así que respeta el índice único <c>(lineaSolicitudId, ordenVehiculo)</c> del script 03. En una ruta con camiones sin número
-    /// (escritos antes de #188) queda también sin número: así se ordena por <c>createdAt</c>, detrás de los que ya tiene.
+    /// (filas anteriores al script 03) queda también sin número: así se ordena por <c>createdAt</c>, detrás de los que ya tiene.
     /// </summary>
     public clsVehiculoLineaSolicitud AgregarVehiculo(clsCamionPlaneado plan)
     {
@@ -333,7 +333,7 @@ public sealed partial class clsLineaSolicitud
             plan.VolumenTotalM3, plan.PorcentajeLlenadoVolumen, plan.PorcentajeLlenadoPeso);
         if (plan.Rechazo is { } rechazo)
         {
-            // HU-028.1 (#183): copiado a una -vN con el rechazo de la Mesa: nace rechazado y fuera del envío.
+            // Copiado a una -vN con el rechazo de la Mesa: nace rechazado y fuera del envío.
             camion.HeredarRechazo(rechazo);
         }
 
@@ -343,13 +343,13 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// HU-023.3: guarda lo que respondió el cubicador para la ruta (<c>null</c> = sin cubicador: se limpian el resultado, el motivo y la
-    /// corrida). Los avisos se guardan con la ruta (<see cref="AvisosCubicacion"/>, HU-023.5).
+    /// Guarda lo que respondió el cubicador para la ruta (<c>null</c> = sin cubicador: se limpian el resultado, el motivo y la
+    /// corrida). Los avisos se guardan con la ruta (<see cref="AvisosCubicacion"/>).
     /// </summary>
     public void RegistrarCubicacion(clsCubicacionRuta? cubicacion) => RegistrarCubicacion(cubicacion, null);
 
     /// <summary>
-    /// <see cref="RegistrarCubicacion(clsCubicacionRuta?)"/> con los avisos del vehículo de la ruta (HU-032, #197, <see cref="clsAvisosVehiculo"/>):
+    /// <see cref="RegistrarCubicacion(clsCubicacionRuta?)"/> con los avisos del vehículo de la ruta (<see cref="clsAvisosVehiculo"/>):
     /// se guardan con las advertencias del cubicador y reemplazan los anteriores.
     /// </summary>
     public void RegistrarCubicacion(clsCubicacionRuta? cubicacion, IReadOnlyList<clsAdvertenciaCubicador>? avisosVehiculo)
@@ -371,8 +371,8 @@ public sealed partial class clsLineaSolicitud
     public const string CodigoAvisoMotivoNoGuardado = "MOTIVO_SIN_SELECCION";
 
     /// <summary>
-    /// HU-023 (#176), respaldo de la opción A: la base todavía no admite el motivo (falta <c>db/scripts/07</c>, que agrega
-    /// <c>BUSQUEDA_AGOTADA</c> al CHECK). El motivo se guarda en <c>NULL</c> y el valor real queda como advertencia visible de la ruta
+    /// Respaldo para una base que no admite el motivo (sin <c>db/scripts/07</c>, que agrega
+    /// <c>BUSQUEDA_AGOTADA</c> al CHECK): el motivo se guarda en <c>NULL</c> y el valor real queda como advertencia visible de la ruta
     /// (<see cref="CodigoAvisoMotivoNoGuardado"/>), con el <paramref name="mensaje"/> para el comercial. No hace nada sin motivo.
     /// </summary>
     public void DegradarMotivoSinSeleccion(string mensaje)
@@ -395,7 +395,7 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// HU-023.3: reemplaza los camiones de la ruta por un plan nuevo del cubicador (recalcular la ruta, re-solicitud con cambios de carga),
+    /// Reemplaza los camiones de la ruta por un plan nuevo del cubicador (recalcular la ruta, re-solicitud con cambios de carga),
     /// con su resultado. Solo antes de enviar a Nexo: los camiones anteriores se quitan y los nuevos nacen sin estado ni costo.
     /// </summary>
     public void ReemplazarCamiones(
@@ -417,7 +417,7 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// HU-023.5 (#160): la ruta queda esperando la cubicación en segundo plano (con su camión provisional sin vehículo). Solo al crearla.
+    /// La ruta queda esperando la cubicación en segundo plano (con su camión provisional sin vehículo). Solo al crearla.
     /// </summary>
     internal void MarcarCubicacionPendiente()
     {
@@ -427,7 +427,7 @@ public sealed partial class clsLineaSolicitud
         ErrorCubicacion = null;
     }
 
-    /// <summary>HU-023.5: la cubicación en segundo plano terminó: los camiones del plan reemplazan al provisional.</summary>
+    /// <summary>La cubicación en segundo plano terminó: los camiones del plan reemplazan al provisional.</summary>
     internal void CompletarCubicacion(clsPlanRuta plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -438,7 +438,7 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// HU-023.5: un intento de cubicar la ruta falló. Con <paramref name="reintentarEn"/> la ruta sigue pendiente y se vuelve a tomar
+    /// Un intento de cubicar la ruta falló. Con <paramref name="reintentarEn"/> la ruta sigue pendiente y se vuelve a tomar
     /// desde esa hora; sin él queda <see cref="Cotizaciones.EstadoCubicacion.Fallida"/> (con el error visible para el comercial).
     /// </summary>
     internal void RegistrarFalloCubicacion(string codigo, string mensaje, DateTimeOffset? reintentarEn)
@@ -452,15 +452,15 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// Opción C (validación de los defectos del 2026-10-16): el cubicador estaba ocupado (<c>CUBICADOR_OCUPADO</c>, no se le llamó). La
+    /// El cubicador estaba ocupado (<c>CUBICADOR_OCUPADO</c>, no se le llamó). La
     /// ruta sigue pendiente desde <paramref name="disponibleAt"/>, sin gastar un intento ni anotar un error.
     /// </summary>
     internal void PosponerCubicacion(DateTimeOffset disponibleAt) => CubicacionDisponibleAt = disponibleAt;
 
     /// <summary>
-    /// HU-023.5: ¿la ruta falló porque el cubicador no respondió (caída o tiempo agotado, <c>CUBICADOR_NO_DISPONIBLE</c>)? Solo esas se
+    /// ¿La ruta falló porque el cubicador no respondió (caída o tiempo agotado, <c>CUBICADOR_NO_DISPONIBLE</c>)? Solo esas se
     /// pueden aceptar con el camión sin vehículo: un rechazo de la petición (mercancía desconocida, dimensiones inválidas...) o una
-    /// respuesta inválida es un dato malo que el respaldo escondería (HU-023.1, contra el fallo silencioso).
+    /// respuesta inválida es un dato malo que el respaldo escondería (se evita el fallo silencioso).
     /// </summary>
     public bool FalloPorCaidaDelCubicador =>
         EstadoCubicacion == Cotizaciones.EstadoCubicacion.Fallida
@@ -468,9 +468,9 @@ public sealed partial class clsLineaSolicitud
         && error.StartsWith(clsCodigosError.CubicadorNoDisponible + ":", StringComparison.Ordinal);
 
     /// <summary>
-    /// HU-023.5: el comercial reintenta una ruta fallida. Sin <paramref name="usarRespaldo"/> vuelve a la cola. Con él, solo si falló por
+    /// El comercial reintenta una ruta fallida. Sin <paramref name="usarRespaldo"/> vuelve a la cola. Con él, solo si falló por
     /// una caída del cubicador (<see cref="FalloPorCaidaDelCubicador"/>), la ruta queda cubicada sin resultado ni error con el camión del
-    /// <paramref name="respaldo"/> (HU-032, ADR-022, endurecimiento B de #199: el vehículo elegido validado contra Nexo y su aviso
+    /// <paramref name="respaldo"/> (ADR-022: el vehículo elegido validado contra Nexo y su aviso
     /// <c>VEHICULO_ELEGIDO_USADO</c> o <c>VEHICULO_ELEGIDO_INVALIDO</c>, como en segundo plano) o, sin él, con el camión provisional sin
     /// vehículo (lo resuelve la Mesa de Costeo de Nexo). Un rechazo no cambia (devuelve <c>false</c>).
     /// </summary>
@@ -504,7 +504,7 @@ public sealed partial class clsLineaSolicitud
 
     /// <summary>
     /// La ruta como línea de la captura (para revalidarla o aplicarle cambios de carga): con el vehículo de su único camión (o vacío si
-    /// tiene varios) y sus mercancías en orden. Es la adaptación "una ruta, un camión" de HU-021 (ADR-019).
+    /// tiene varios) y sus mercancías en orden. Es la adaptación "una ruta, un camión" (ADR-019).
     /// </summary>
     public clsLineaSolicitudCosteo ALinea()
     {
@@ -539,7 +539,7 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// HU-032 (#197): el vehículo elegido de la ruta: <see cref="TipoVehiculoElegido"/> y <see cref="CarroceriaElegida"/> si están guardados;
+    /// El vehículo elegido de la ruta: <see cref="TipoVehiculoElegido"/> y <see cref="CarroceriaElegida"/> si están guardados;
     /// en una ruta anterior al script 12 (sin elegido), el del camión del respaldo si la ruta tiene uno solo sin recomendación del cubicador
     /// (el vehículo digitado de <c>Captura:AceptarVehiculoCliente</c>). Lo muestra el modelo editable y con él compara la edición.
     /// </summary>
@@ -549,13 +549,13 @@ public sealed partial class clsLineaSolicitud
             : _vehiculos is [{ IdRecomendacionVehiculo: null } unico] ? (unico.TipoVehiculo, unico.Carroceria) : (null, null);
 
     /// <summary>
-    /// HU-032 (#197): ¿los camiones de la ruta dependen del vehículo elegido? Sí salvo que el cubicador los haya asignado
+    /// ¿Los camiones de la ruta dependen del vehículo elegido? Sí salvo que el cubicador los haya asignado
     /// (<c>ASIGNADO</c>): entonces el elegido solo es el respaldo y cambiarlo no cambia lo que viaja.
     /// </summary>
     public bool UsaVehiculoElegido => !string.Equals(ResultadoCubicacion, "ASIGNADO", StringComparison.Ordinal);
 
     /// <summary>
-    /// HU-032 (#197): la ruta como línea de la captura con su vehículo ELEGIDO (<see cref="VehiculoElegido"/>), no el de su camión: lo que
+    /// La ruta como línea de la captura con su vehículo ELEGIDO (<see cref="VehiculoElegido"/>), no el de su camión: lo que
     /// el planificador usa de respaldo y lo que conservan la edición y la re-solicitud. <see cref="ALinea"/> sigue con el del camión (lo
     /// que viaja; con él se revalida lo guardado).
     /// </summary>
@@ -571,11 +571,10 @@ public sealed partial class clsLineaSolicitud
     /// levante como <c>valorAprovisionamiento</c>) y el id de la ruta (<see cref="clsLineaSolicitudCosteo.RutaId"/>, para N1 de Nexo). Las
     /// mercancías viajan como posiciones solo si la ruta tiene un único camión: con varios, a Nexo le basta el peso de cada uno (el
     /// reparto lo sabe el cubicador). El peso es <see cref="PesoLineaNexo"/> y el camión del cubicador viaja en
-    /// <see cref="clsLineaSolicitudCosteo.IdRecomendacionVehiculo"/> (HU-023.4, #159). HU-030.1 (#184): una ruta de contenedor con
-    /// <see cref="PesoConTaraKg"/> manda el peso con tara. #250 (DU §8, contrato único del 2026-11-04): <c>peso</c> es el total con tara y
+    /// <see cref="clsLineaSolicitudCosteo.IdRecomendacionVehiculo"/>. Una ruta de contenedor con
+    /// <see cref="PesoConTaraKg"/> manda el peso con tara. En el contrato de Nexo (DU §8) <c>peso</c> es el total con tara y
     /// Nexo solo responde <c>PESO_INCONSISTENTE</c> si la suma <c>cantidad × pesoKg</c> de las posiciones SUPERA el peso en más de 1 %; un
-    /// peso mayor (la tara) es válido. Por eso, con un solo camión, la línea con tara lleva sus posiciones como cualquier otra (antes viajaba
-    /// sin ellas para esquivar el 1 % simétrico de NEXO#308). La regla asimétrica se cumple sin guarda propia: la carga cuadra al 1 % con
+    /// peso mayor (la tara) es válido. Por eso, con un solo camión, la línea con tara lleva sus posiciones como cualquier otra. La regla asimétrica se cumple sin guarda propia: la carga cuadra al 1 % con
     /// las posiciones (revalidada antes de cada envío) y el peso que viaja nunca es menor que la carga (<see cref="PesoLineaNexo"/>). La
     /// línea no lleva <see cref="clsLineaSolicitudCosteo.PesoConTaraKg"/>: su <c>PesoKg</c> ya es el peso con tara.
     /// </summary>
@@ -597,23 +596,23 @@ public sealed partial class clsLineaSolicitud
             PesoKg = PesoLineaNexo(camion),
             PesoConTaraKg = null,
             ValorAprovisionamiento = ValorLevanteContenedor is null ? null : camion.CostoLevanteContenedor,
-            // HU-032 (#197): una ruta con mercancías sin medidas (no cubicables) viaja sin posiciones (PosicionesParaNexo). #250 (DU §8):
-            // con tara también, con un solo camión; con varios, ninguna línea lleva posiciones (LineasSinPosiciones).
+            // Una ruta con mercancías sin medidas (no cubicables) viaja sin posiciones (PosicionesParaNexo). Con tara las lleva
+            // si tiene un solo camión; con varios, ninguna línea lleva posiciones (LineasSinPosiciones).
             Posiciones = UnSoloCamion ? linea.PosicionesParaNexo : [],
         };
     }
 
     /// <summary>
-    /// HU-030.1 (#184): ¿la ruta manda a Nexo el peso con tara? Solo una ruta <c>Contenedor</c> con <see cref="PesoConTaraKg"/> (la
-    /// captura no la acepta en otra clase, #250: Carga suelta y Extradimensionado mandan el peso de la carga; si una ruta guardada cambiara
-    /// de clase, la tara deja de aplicarse en lugar de viajar). No decide las posiciones: desde #250 eso lo decide solo el número de camiones.
+    /// ¿La ruta manda a Nexo el peso con tara? Solo una ruta <c>Contenedor</c> con <see cref="PesoConTaraKg"/> (la
+    /// captura no la acepta en otra clase: Carga suelta y Extradimensionado mandan el peso de la carga; si una ruta guardada cambiara
+    /// de clase, la tara deja de aplicarse en lugar de viajar). No decide las posiciones: eso lo decide solo el número de camiones.
     /// </summary>
     public bool LlevaTara => PesoConTaraKg is not null
         && string.Equals(ClaseViaje, clsCatalogosCaptura.ClaseViajeContenedor, StringComparison.Ordinal);
 
     /// <summary>
-    /// HU-030.1 (#184): el peso con tara que viaja a Nexo en la línea de <paramref name="camion"/> (<see cref="PesoLineaNexo"/>), o
-    /// <c>null</c> si la ruta no lleva tara. Es lo que el comercial ve por camión en el costeo. Integración 1021 (con HU-028.1, #183): un
+    /// El peso con tara que viaja a Nexo en la línea de <paramref name="camion"/> (<see cref="PesoLineaNexo"/>), o
+    /// <c>null</c> si la ruta no lleva tara. Es lo que el comercial ve por camión en el costeo. Un
     /// camión rechazado que quedó fuera del envío (<see cref="clsVehiculoLineaSolicitud.FueraDelEnvio"/>) no viaja ni lleva tara: <c>null</c>.
     /// </summary>
     public decimal? PesoConTaraCamion(clsVehiculoLineaSolicitud camion)
@@ -625,7 +624,7 @@ public sealed partial class clsLineaSolicitud
     /// <summary>
     /// ¿La ruta tiene un solo camión (contando los descartados)? Decide si la línea lleva las posiciones y el peso de la ruta
     /// (<see cref="PesoLineaNexo"/>). Cuenta TODOS los camiones, no solo los vigentes: un camión que la Mesa descarta después del envío no
-    /// cambia lo que ya viajó, así que el emparejador del polling vuelve a calcular exactamente el peso enviado (HU-023.4, validación).
+    /// cambia lo que ya viajó, así que el emparejador del polling vuelve a calcular exactamente el peso enviado.
     /// </summary>
     private bool UnSoloCamion => _vehiculos.Count == 1;
 
@@ -636,21 +635,21 @@ public sealed partial class clsLineaSolicitud
     public bool LineasSinPosiciones => !UnSoloCamion;
 
     /// <summary>
-    /// Peso que viaja a Nexo en la línea de <paramref name="camion"/> (HU-023.4, #159, decisión 6 del 2026-10-13). Con <b>un solo camión</b>
+    /// Peso que viaja a Nexo en la línea de <paramref name="camion"/>. Con <b>un solo camión</b>
     /// la línea lleva las posiciones, así que lleva el <b>peso declarado de la ruta</b> (o, sin él, la suma de las posiciones): ese ya cuadra
-    /// al 1 % con las posiciones y Nexo no responde <c>PESO_INCONSISTENTE</c> (#250, DU §8: solo lo responde si la suma SUPERA el peso en
+    /// al 1 % con las posiciones y Nexo no responde <c>PESO_INCONSISTENTE</c> (DU §8: solo lo responde si la suma SUPERA el peso en
     /// más de 1 %). El peso del cubicador (<see cref="clsVehiculoLineaSolicitud.PesoKg"/>)
-    /// se guarda y se muestra, pero no viaja. Con <b>varios camiones</b> (sin posiciones) va el peso de cada camión, como antes. El emparejador
+    /// se guarda y se muestra, pero no viaja. Con <b>varios camiones</b> (sin posiciones) va el peso de cada camión. El emparejador
     /// compara con este mismo peso, en una sola pasada (<see cref="clsCamionParaEmparejar.Desde"/>).
     /// </summary>
     /// <remarks>
-    /// HU-030.1 (#184): en una ruta que <see cref="LlevaTara"/> (contenedor con <see cref="PesoConTaraKg"/>) la tara total (peso con tara
+    /// En una ruta que <see cref="LlevaTara"/> (contenedor con <see cref="PesoConTaraKg"/>) la tara total (peso con tara
     /// menos la carga que viaja en sus líneas) se reparte <b>por partes iguales</b> entre TODOS sus camiones (uno por contenedor, de la misma
     /// clase: la misma tara), en céntimos, y el último camión en orden (<see cref="VehiculosOrdenados"/>) se queda con el resto del
-    /// redondeo: la suma de las líneas es exactamente el peso con tara. Con un solo camión, la línea lleva el peso con tara tal cual y,
-    /// desde #250 (DU §8), también sus posiciones: un peso mayor que su suma es la tara y Nexo lo acepta. Como
+    /// redondeo: la suma de las líneas es exactamente el peso con tara. Con un solo camión, la línea lleva el peso con tara tal cual y
+    /// también sus posiciones (DU §8): un peso mayor que su suma es la tara y Nexo lo acepta. Como
     /// el peso sin tara, cuenta los camiones descartados: lo que ya viajó no cambia y el emparejador vuelve a calcular el mismo peso.
-    /// Integración 1021 (con #183): un camión rechazado fuera del envío no lleva tara y el redondeo lo absorbe el último que viaja
+    /// Un camión rechazado fuera del envío no lleva tara y el redondeo lo absorbe el último que viaja
     /// (<see cref="TaraDelCamion"/>).
     /// </remarks>
     public decimal? PesoLineaNexo(clsVehiculoLineaSolicitud camion)
@@ -660,7 +659,7 @@ public sealed partial class clsLineaSolicitud
         return sinTara is { } carga && TaraDelCamion(camion) is { } tara ? carga + tara : sinTara;
     }
 
-    /// <summary>El peso de la línea de <paramref name="camion"/> SIN tara (HU-023.4, decisión 6): el de la ruta con un camión; si no, el del camión.</summary>
+    /// <summary>El peso de la línea de <paramref name="camion"/> SIN tara: el de la ruta con un camión; si no, el del camión.</summary>
     private decimal? PesoCargaLineaNexo(clsVehiculoLineaSolicitud camion)
     {
         if (!UnSoloCamion)
@@ -677,22 +676,22 @@ public sealed partial class clsLineaSolicitud
         MercanciasOrdenadas.Select(m => m.APosicion()).Where(p => p.PesoKg is > 0).Sum(p => p.Cantidad * p.PesoKg!.Value);
 
     /// <summary>
-    /// HU-030.1 (#184): la parte de la tara que lleva <paramref name="camion"/> (ver <see cref="PesoLineaNexo"/>), o <c>null</c> si la
+    /// La parte de la tara que lleva <paramref name="camion"/> (ver <see cref="PesoLineaNexo"/>), o <c>null</c> si la
     /// ruta no lleva tara, no se conoce su peso de carga o el camión no viaja. Una tara negativa (dato anterior a la validación) cuenta como 0.
     /// </summary>
     /// <remarks>
     /// <para>
     /// La tara total es el peso con tara menos la carga que <b>viaja</b> en las líneas (la suma de <see cref="PesoCargaLineaNexo"/> de
     /// TODOS los camiones de la ruta), no la declarada: con varios camiones, la suma de sus pesos del cubicador puede diferir hasta 1 % del
-    /// <see cref="PesoKg"/> declarado (sale de las mercancías), y así la suma de las líneas sigue siendo exactamente el peso con tara
-    /// (validación #184). Si algún camión no trae peso, se usa la carga de la ruta (<see cref="PesoKg"/> o la suma de las mercancías).
+    /// <see cref="PesoKg"/> declarado (sale de las mercancías), y así la suma de las líneas sigue siendo exactamente el peso con tara.
+    /// Si algún camión no trae peso, se usa la carga de la ruta (<see cref="PesoKg"/> o la suma de las mercancías).
     /// </para>
     /// <para>
-    /// Integración 1021 (con HU-028.1, #183: los camiones rechazados por la Mesa no se reenvían): hay un contenedor por camión, así que la
+    /// Los camiones rechazados por la Mesa no se reenvían. Hay un contenedor por camión, así que la
     /// tara de UN contenedor es la tara total dividida entre el número TOTAL de camiones de la ruta (<c>N</c>, en céntimos, hacia cero).
     /// Solo la llevan los camiones que viajan (los que no están <see cref="clsVehiculoLineaSolicitud.FueraDelEnvio"/>): cada uno su parte, y
     /// el ÚLTIMO que viaja suma además el resto del redondeo (<c>tara − parte × N</c>). Un rechazado fuera del envío no lleva tara (<c>null</c>)
-    /// y su contenedor no carga a los demás. Sin rechazados es la regla de #184 (el último camión cuadra la suma con el peso con tara).
+    /// y su contenedor no carga a los demás. Sin rechazados, el último camión cuadra la suma con el peso con tara.
     /// </para>
     /// </remarks>
     private decimal? TaraDelCamion(clsVehiculoLineaSolicitud camion)
@@ -718,7 +717,7 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// Completa los ids de municipio que faltan (HU-013.11): una ruta guardada sin ellos se reenvía con los ids resueltos, y se guardan
+    /// Completa los ids de municipio que faltan: una ruta guardada sin ellos se reenvía con los ids resueltos, y se guardan
     /// para que el siguiente reenvío mande lo mismo. Un id que ya tiene no se cambia. Devuelve <c>true</c> si cambió.
     /// </summary>
     public bool CompletarMunicipios(int? origenMunicipioId, int? destinoMunicipioId)
@@ -742,8 +741,8 @@ public sealed partial class clsLineaSolicitud
     /// </summary>
     internal bool RegistrarEstadoCamiones(EstadoCosteo estado)
     {
-        // HU-021.9: un camión descartado en Nexo sigue descartado (no viaja en un reenvío); si lo están todos, cuentan todos.
-        // HU-028.1 (#183): un camión rechazado tampoco toma el estado de la solicitud (lo deshace solo la lectura de su línea).
+        // Un camión descartado en Nexo sigue descartado (no viaja en un reenvío); si lo están todos, cuentan todos.
+        // Un camión rechazado tampoco toma el estado de la solicitud (lo deshace solo la lectura de su línea).
         var cambio = false;
         foreach (var camion in VehiculosQueCuentan)
         {
@@ -781,13 +780,13 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// Re-solicitud en el mismo folio (HU-013.4): sus camiones vuelven a viajar a Nexo como líneas nuevas. Se olvidan los costos y el
-    /// precio de Nexo (los conexos y el levante, de Cotifly, se conservan) y los camiones quedan en <c>pendiente_envio</c>. HU-021.9: los
+    /// Re-solicitud en el mismo folio: sus camiones vuelven a viajar a Nexo como líneas nuevas. Se olvidan los costos y el
+    /// precio de Nexo (los conexos y el levante, de Cotifly, se conservan) y los camiones quedan en <c>pendiente_envio</c>. Los
     /// camiones <c>descartada</c> en Nexo (la Mesa borró su línea) siguen descartados y no se reenvían, igual que en la <c>-vN</c>; si lo
-    /// están todos, se reenvían todos (<see cref="VehiculosQueCuentan"/>). HU-028.1 (#183, decisión del 2026-10-20): los camiones que la
+    /// están todos, se reenvían todos (<see cref="VehiculosQueCuentan"/>). Los camiones que la
     /// Mesa de Costeo rechazó NO se reenvían (<see cref="VehiculosQueViajan"/>): siguen rechazados, con su motivo, y quedan fuera del envío
     /// (<see cref="clsVehiculoLineaSolicitud.DejarFueraDelEnvio"/>); una ruta con todos rechazados queda <c>rechazada</c> y no viaja. Para
-    /// reenviarlos, el comercial edita la solicitud con <c>reincluir_rechazados</c> (<see cref="ReincluirRechazados"/>, antes de esto).
+    /// reenviarlos, el comercial edita la solicitud con <c>reincluir_rechazados</c> (<see cref="ReincluirRechazados"/>, que se aplica primero).
     /// </summary>
     internal void ReiniciarCosteo()
     {
@@ -811,7 +810,7 @@ public sealed partial class clsLineaSolicitud
 
     /// <summary>
     /// Recalcula y guarda los totales de costo y el precio de la ruta (§9.1): se llama cada vez que cambia el costo de un camión, un
-    /// conexo o el margen. HU-043.2 (#251): el precio es <see cref="PrecioRutaCon"/> con <see cref="MargenAplicado"/> y
+    /// conexo o el margen. El precio es <see cref="PrecioRutaCon"/> con <see cref="MargenAplicado"/> y
     /// <see cref="MetodoCalculo"/> (transporte con margen + venta de los conexos sin margen), en pesos o convertido a la
     /// <paramref name="moneda"/> con la <paramref name="trm"/> fijada en la solicitud (ADR-014). Sin costo final o sin margen el precio
     /// queda vacío. Devuelve si algo cambió, o el error del módulo de precio (la ruta queda sin precio).
@@ -832,7 +831,7 @@ public sealed partial class clsLineaSolicitud
 
     /// <summary>
     /// Precio de <paramref name="costo"/> con el margen y el método de la ruta, en la moneda de la solicitud (la fórmula del transporte
-    /// de la ruta; la usan también la tarifa del transporte y el Excel por camión). HU-043.2 (#251): no es para los conexos, que van a su
+    /// de la ruta; la usan también la tarifa del transporte y el Excel por camión). No es para los conexos, que van a su
     /// venta (<see cref="VentaConexo"/>). <paramref name="precio"/> queda en <c>null</c> sin costo, sin margen o con error; devuelve el
     /// error del módulo de precio, o <c>null</c>.
     /// </summary>
@@ -875,7 +874,7 @@ public sealed partial class clsLineaSolicitud
         CostoFletesTotal is { } fletes && CostoRetornoContenedorTotal is { } retorno ? fletes + retorno + (CostoLevanteContenedorTotal ?? 0m) : null;
 
     /// <summary>
-    /// HU-043.2 (#251): venta de UN conexo en la moneda de la solicitud, SIN margen: <see cref="clsServicioConexoRuta.Venta"/> redondeada a
+    /// Venta de UN conexo en la moneda de la solicitud, SIN margen: <see cref="clsServicioConexoRuta.Venta"/> redondeada a
     /// pesos enteros (como todo precio en COP) y, en dólares, convertida con la <paramref name="trm"/> (centavos, ADR-014). Es la que suma
     /// <see cref="PrecioRutaCon"/>, así que el desglose (transporte + conexos) cuadra exacto con el precio de la ruta. Devuelve el error del
     /// módulo de precio (TRM inválida), o <c>null</c>.
@@ -902,9 +901,9 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// HU-043.2 (#251): precio de la ruta con <paramref name="margen"/> y <paramref name="metodo"/> en la moneda de la solicitud:
+    /// Precio de la ruta con <paramref name="margen"/> y <paramref name="metodo"/> en la moneda de la solicitud:
     /// <see cref="CostoTransporte"/> (fletes + retorno + levante) con el margen + la venta de cada conexo (<see cref="VentaConexo"/>) SIN
-    /// margen + (HU-045.2, #264) el seguro de la mercancía si la ruta lo incluye (<see cref="ValorSeguro"/>), también sin margen. Es el de
+    /// margen + el seguro de la mercancía si la ruta lo incluye (<see cref="ValorSeguro"/>), también sin margen. Es el de
     /// <see cref="RecalcularTotales"/> y el de la vista previa del ajuste (por ruta, en lote y del asistente).
     /// <paramref name="precio"/> queda en <c>null</c> sin transporte (algún camión sin flete), sin margen o con error.
     /// </summary>
@@ -931,7 +930,7 @@ public sealed partial class clsLineaSolicitud
             total += venta!.Value;
         }
 
-        // HU-045.2 (#264, decisión 1): el seguro de la mercancía va después del margen, como los conexos.
+        // El seguro de la mercancía va después del margen, como los conexos.
         if (ValorSeguro(moneda, trm, out var seguro) is { } errorSeguro)
         {
             return errorSeguro;
@@ -942,11 +941,11 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// HU-043.2 (#251): ¿<see cref="PrecioFinalLinea"/> quedó con la fórmula ANTERIOR (fletes + retorno + levante + conexos, todo con el
-    /// margen) y no con la de hoy? Pasa con una ruta finalizada o con PDF antes del despliegue (precio congelado, HU-036.4) o que no se ha
-    /// vuelto a recalcular desde entonces. El desglose (tarifa del transporte y precio de cada conexo) se muestra entonces como se calculó,
+    /// ¿<see cref="PrecioFinalLinea"/> quedó con la fórmula ANTERIOR (fletes + retorno + levante + conexos, todo con el
+    /// margen) y no con la vigente? Pasa con una ruta de precio congelado (finalizada o con PDF) calculada con esa fórmula, o que no se ha
+    /// vuelto a recalcular desde que cambió. El desglose (tarifa del transporte y precio de cada conexo) se muestra entonces como se calculó,
     /// con el margen en los conexos, para que siga cuadrando con el precio guardado: la cotización conserva sus valores. Sin precio
-    /// congelado solo aplica hasta el siguiente recálculo (polling, margen o conexos), que guarda el precio con la fórmula de hoy. Sin
+    /// congelado solo aplica hasta el siguiente recálculo (polling, margen o conexos), que guarda el precio con la fórmula vigente. Sin
     /// conexos (o con margen 0 y venta = costo) las dos fórmulas coinciden y es <c>false</c>.
     /// </summary>
     public bool PrecioConFormulaAnterior(string? moneda, decimal trm) =>
@@ -956,10 +955,10 @@ public sealed partial class clsLineaSolicitud
 
     /// <summary>
     /// Camiones que cuentan para el estado y los totales (precio, PDF, Excel, conteos): los <c>descartada</c> en Nexo se ignoran, salvo que
-    /// todos lo estén (entonces cuentan todos y la ruta queda descartada y sin flete). Regla del coordinador del 2026-10-08 (ADR-019).
-    /// HU-028.1 (#183): los <c>rechazada</c> por la Mesa de Costeo tampoco cuentan, y SIN excepción: una ruta con todos sus camiones
+    /// todos lo estén (entonces cuentan todos y la ruta queda descartada y sin flete), según ADR-019.
+    /// Los <c>rechazada</c> por la Mesa de Costeo tampoco cuentan, y SIN excepción: una ruta con todos sus camiones
     /// rechazados (o rechazados y descartados) no tiene camiones que cuenten, queda <c>rechazada</c> y sin precio, y no bloquea la cotización.
-    /// Son también los que viajan a Nexo (<see cref="VehiculosQueViajan"/>, decisión del 2026-10-20).
+    /// Son también los que viajan a Nexo (<see cref="VehiculosQueViajan"/>).
     /// </summary>
     public IReadOnlyList<clsVehiculoLineaSolicitud> VehiculosQueCuentan
     {
@@ -971,23 +970,23 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// HU-028.1 (#183, decisión del 2026-10-20: "no reenviar los camiones rechazados por defecto"): los camiones que viajan a Nexo en el envío,
+    /// Los camiones que viajan a Nexo en el envío (los rechazados no se reenvían por defecto),
     /// la re-solicitud (mismo folio o <c>-vN</c>) y la edición: los <see cref="VehiculosQueCuentan"/> (vigentes y no rechazados). Una ruta sin
     /// ninguno (todos rechazados) no manda líneas a Nexo: queda visible como <c>rechazada</c>, sin precio. Es la base de
     /// <see cref="clsCotizacionSolicitud.LineasNexo"/>, de la nota de camiones por ruta y del reparto de lo que viaja por camión.
     /// </summary>
     public IReadOnlyList<clsVehiculoLineaSolicitud> VehiculosQueViajan => VehiculosQueCuentan;
 
-    /// <summary>HU-028.1 (#183): ¿la ruta manda al menos una línea a Nexo? (no, si todos sus camiones vigentes están rechazados).</summary>
+    /// <summary>¿La ruta manda al menos una línea a Nexo? (no, si todos sus camiones vigentes están rechazados).</summary>
     public bool ViajaANexo => VehiculosQueViajan.Count > 0;
 
-    /// <summary>HU-028.1 (#183): cuántos camiones de la ruta están rechazados por la Mesa de Costeo (los que no se reenvían por defecto).</summary>
+    /// <summary>Cuántos camiones de la ruta están rechazados por la Mesa de Costeo (los que no se reenvían por defecto).</summary>
     public int CamionesRechazados => _vehiculos.Count(v => v.Rechazado);
 
     /// <summary>
-    /// HU-028.1 (#183): el comercial pidió al editar que la Mesa reconsidere los camiones rechazados de la ruta (<c>reincluir_rechazados</c>).
+    /// El comercial pidió al editar que la Mesa reconsidere los camiones rechazados de la ruta (<c>reincluir_rechazados</c>).
     /// Cada rechazado olvida el rechazo, la línea y los costos de Nexo (el rechazo anterior queda en la auditoría, en la instantánea de la
-    /// edición) y vuelve a viajar con su vehículo, su carrocería y su peso tal como están (D2: lo que la Mesa haya puesto se conserva; no se
+    /// edición) y vuelve a viajar con su vehículo, su carrocería y su peso tal como están (lo que la Mesa haya puesto se conserva; no se
     /// vuelve a cubicar). Llamar antes de <see cref="ReiniciarCosteo"/>. Devuelve cuántos reincluyó.
     /// </summary>
     internal int ReincluirRechazados()
@@ -1003,7 +1002,7 @@ public sealed partial class clsLineaSolicitud
 
     /// <summary>
     /// Camiones de la ruta que se copian a una versión nueva o se conservan en una edición: todos menos los <c>descartada</c> (la Mesa borró
-    /// su línea, #134), salvo que todos lo estén (entonces todos). HU-028.1 (#183): los <c>rechazada</c> están, pero NO viajan
+    /// su línea), salvo que todos lo estén (entonces todos). Los <c>rechazada</c> están, pero NO viajan
     /// (<see cref="VehiculosQueViajan"/>): la <c>-vN</c> los copia rechazados (<see cref="clsVehiculoLineaSolicitud.RechazoParaCopiar"/>), salvo
     /// que el comercial pida reincluirlos al editar.
     /// </summary>
@@ -1017,7 +1016,7 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// HU-028.1 (#183): ¿la ruta quedó <c>rechazada</c>? (todos sus camiones vigentes rechazados por la Mesa de Costeo de Nexo). No tiene
+    /// ¿La ruta quedó <c>rechazada</c>? (todos sus camiones vigentes rechazados por la Mesa de Costeo de Nexo). No tiene
     /// precio, no cuenta en el total de la cotización, el PDF y el Excel la muestran "Sin costeo" y no admite margen ni conexos
     /// (<c>RUTA_RECHAZADA</c>).
     /// </summary>
@@ -1025,7 +1024,7 @@ public sealed partial class clsLineaSolicitud
 
 
     /// <summary>
-    /// HU-028.1 (#183): los motivos del rechazo de sus camiones, distintos y en el orden de los camiones, unidos con <c>" | "</c>; <c>null</c>
+    /// Los motivos del rechazo de sus camiones, distintos y en el orden de los camiones, unidos con <c>" | "</c>; <c>null</c>
     /// si ninguno está rechazado (o Nexo no mandó el motivo). Para el comercial (costeo, detalle, licitación); nunca va al PDF ni al Excel.
     /// </summary>
     public string? MotivoRechazo
@@ -1083,7 +1082,7 @@ public sealed partial class clsLineaSolicitud
 
     /// <summary>
     /// <see cref="AgregarOActualizarConexo(string, string?, decimal, decimal)"/> con el id del catálogo de Nexo y la categoría del conexo
-    /// (HU-014, #188, scripts 03 y 05), si se conocen: se guardan en un conexo nuevo y completan los de una fila que no los tenía.
+    /// (scripts 03 y 05), si se conocen: se guardan en un conexo nuevo y completan los de una fila que no los tenía.
     /// </summary>
     internal bool AgregarOActualizarConexo(clsCambioConexo conexo)
     {
@@ -1104,7 +1103,7 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// HU-043.2 (#251): cambia la venta unitaria del conexo <paramref name="idServicioConexo"/> de la ruta (sin costo ni cantidad). No
+    /// Cambia la venta unitaria del conexo <paramref name="idServicioConexo"/> de la ruta (sin costo ni cantidad). No
     /// recalcula: desde fuera se usa <see cref="clsCotizacionSolicitud.RefrescarVentaConexos"/>. Devuelve <c>true</c> si cambió.
     /// </summary>
     internal bool CambiarVentaConexo(string idServicioConexo, decimal precioVenta) =>
@@ -1162,7 +1161,7 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// Cambia el valor de UN levante de la ruta y lo copia a cada camión (decisión 4). No recalcula: desde fuera se usa
+    /// Cambia el valor de UN levante de la ruta y lo copia a cada camión. No recalcula: desde fuera se usa
     /// <see cref="clsCotizacionSolicitud.CambiarValorLevante"/>. Devuelve <c>true</c> si cambió.
     /// </summary>
     internal bool CambiarValorLevante(decimal? valor)
@@ -1186,7 +1185,7 @@ public sealed partial class clsLineaSolicitud
         return true;
     }
 
-    // ------------------------------------------------------------------ Margen (ex clsCotizacion, HU-013.2, ADR-018 §3)
+    // ------------------------------------------------------------------ Margen (ADR-018 §3)
 
     /// <summary>Margen máximo del ajuste del comercial sobre el costeo (ADR-018 §3): 0,99.</summary>
     public const decimal MargenMaximoAjuste = 0.99m;
@@ -1202,7 +1201,7 @@ public sealed partial class clsLineaSolicitud
         ?? (OrigenMargen == Margen.OrigenMargen.Negociado ? null : MargenAplicado);
 
     /// <summary>
-    /// HU-009 (#139, B1): ¿el margen que propuso SAP TM para la ruta está fuera de [0, 60 %] (<see cref="clsReglasMargen.EsAnomalo"/>)? Se
+    /// ¿El margen que propuso SAP TM para la ruta está fuera de [0, 60 %] (<see cref="clsReglasMargen.EsAnomalo"/>)? Se
     /// guarda en <see cref="MargenSAPSugerido"/> para que quede visible, pero no se aplica ni cuenta como sugerido: la ruta usa el de la
     /// política de su línea (<see cref="RegistrarMargenSapAnomalo"/>).
     /// </summary>
@@ -1227,7 +1226,7 @@ public sealed partial class clsLineaSolicitud
     public bool TienePrecio => PrecioFinalLinea is not null && MetodoCalculo is not null && MargenAplicado is not null;
 
     /// <summary>
-    /// Margen resuelto al enviar la solicitud a Nexo (HU-005.7, ADR-015 §5): SAP TM con el BP o la política de su línea de negocio. Se
+    /// Margen resuelto al enviar la solicitud a Nexo (ADR-015 §5): SAP TM con el BP o la política de su línea de negocio. Se
     /// guarda para aplicarlo cuando llegue el costeo. Valida el margen con su método (<see cref="clsReglaMargen"/>).
     /// </summary>
     public void RegistrarMargenCosteo(decimal? margenPolitica, decimal margenAplicado, OrigenMargen origen, string metodoCalculo)
@@ -1248,7 +1247,7 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// HU-009 (#139, B1): SAP TM propuso para la ruta un margen anómalo (fuera de [0, 60 %]). Se llama DESPUÉS de registrar el margen de la
+    /// SAP TM propuso para la ruta un margen anómalo (fuera de [0, 60 %]). Se llama DESPUÉS de registrar el margen de la
     /// política de la línea (<see cref="RegistrarMargenCosteo"/> o <see cref="RefrescarMargenSugerido"/>): deja el valor de SAP en
     /// <see cref="MargenSAPSugerido"/> como marca visible (<see cref="MargenSapAnomalo"/>) sin aplicarlo ni usarlo como sugerido.
     /// </summary>
@@ -1263,7 +1262,7 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// Re-solicitud con margen negociado (HU-013.4, decisión del 2026-10-06): conserva el margen aplicado y el origen <c>negociado</c>, y
+    /// Re-solicitud con margen negociado: conserva el margen aplicado y el origen <c>negociado</c>, y
     /// refresca los sugeridos (SAP TM o la política de la línea) como referencia.
     /// </summary>
     public void RefrescarMargenSugerido(decimal? margenPolitica, decimal sugerido, OrigenMargen origen)
@@ -1357,7 +1356,7 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// HU-041.1 (#231): ¿qué cambiaría <see cref="RestaurarMargenSugerido"/>? El margen sugerido vigente de la ruta y su origen
+    /// ¿Qué cambiaría <see cref="RestaurarMargenSugerido"/>? El margen sugerido vigente de la ruta y su origen
     /// (<c>sap_tm</c> o <c>politica_linea</c>), o <c>null</c> si la ruta no tiene sugerido al que volver.
     /// </summary>
     public (decimal Margen, OrigenMargen Origen)? MargenSugeridoParaRestaurar =>
@@ -1366,7 +1365,7 @@ public sealed partial class clsLineaSolicitud
             : null;
 
     /// <summary>
-    /// HU-041.1 (#231): "revertir al sugerido". El margen vuelve al sugerido vigente de la ruta (<see cref="SugeridoVigente"/>) y el origen
+    /// Revierte al sugerido: el margen vuelve al sugerido vigente de la ruta (<see cref="SugeridoVigente"/>) y el origen
     /// al de ese sugerido (<c>sap_tm</c> o <c>politica_linea</c>), así que la ruta deja de figurar como negociada. No toca los sugeridos ni
     /// recalcula el precio (<see cref="RecalcularTotales"/>). Devuelve <c>false</c> si ya estaba en el sugerido con ese origen.
     /// </summary>
@@ -1388,7 +1387,7 @@ public sealed partial class clsLineaSolicitud
     }
 
     /// <summary>
-    /// Versión nueva (ADR-018 §5, decisión del 2026-10-06): un margen ajustado por el comercial en la ruta equivalente de la versión
+    /// Versión nueva (ADR-018 §5): un margen ajustado por el comercial en la ruta equivalente de la versión
     /// anterior se copia (el envío lo conserva y solo refresca el sugerido).
     /// </summary>
     public void CopiarMargenNegociado(clsLineaSolicitud anterior)

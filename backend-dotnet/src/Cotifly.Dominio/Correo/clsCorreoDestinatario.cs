@@ -7,7 +7,7 @@ public sealed class clsCorreoDestinatario
 {
     public const int LargoMaximoEmail = 320;
 
-    /// <summary>DEF-1027B-2 (#228): mensaje de <c>CORREO_INVALIDO</c> para una dirección con saltos de línea u otros caracteres de control.</summary>
+    /// <summary>Mensaje de <c>CORREO_INVALIDO</c> para una dirección con saltos de línea u otros caracteres de control.</summary>
     public const string MensajeConCaracteresDeControl =
         "Un destinatario tiene saltos de línea u otros caracteres de control: escribe una sola dirección de correo por destinatario.";
 
@@ -34,7 +34,7 @@ public sealed class clsCorreoDestinatario
             return error;
         }
 
-        // DEF-1027B-2 (#228): un carácter de control (CR, LF, NUL...) se rechaza ANTES de recortar: no se sanea en silencio, y el mensaje no
+        // Un carácter de control (CR, LF, NUL...) se rechaza ANTES de recortar: no se sanea en silencio, y el mensaje no
         // lo repite (llegaría tal cual al log y a la respuesta).
         if (clsCabecerasCorreo.TieneCaracteresDeControl(email))
         {
@@ -42,9 +42,9 @@ public sealed class clsCorreoDestinatario
         }
 
         var normalizado = Normalizar(email);
-        // HU-033 (#199): una sola dirección por destinatario. MailSender separa una entrada con ',' o ';' en varias direcciones
+        // Una sola dirección por destinatario. MailSender separa una entrada con ',' o ';' en varias direcciones
         // (RecipientList), así que "a@x.com,b@y.com" llegaría a dos personas mientras Cotifly guarda una: se rechaza, igual que un nombre
-        // con ángulos o comillas y una segunda arroba. #228: con el formato estricto de clsCabecerasCorreo (parte local y dominio).
+        // con ángulos o comillas y una segunda arroba. Se valida con el formato estricto de clsCabecerasCorreo (parte local y dominio).
         if (!clsCabecerasCorreo.EsDireccionValida(normalizado))
         {
             return new clsErrorDominio(clsCorreo.CodigoError, $"'{normalizado}' no es un email válido.");

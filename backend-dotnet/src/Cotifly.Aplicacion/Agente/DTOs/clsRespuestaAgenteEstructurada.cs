@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace Cotifly.Aplicacion.Agente.DTOs;
 
 /// <summary>
-/// Respuesta final del agente con esquema (HU-003.10, issue #16, ADR-003 "Salida estructurada"). Es lo único que el LLM entrega
+/// Respuesta final del agente con esquema (ADR-003 "Salida estructurada"). Es lo único que el LLM entrega
 /// al cerrar el turno; se pide con <c>ChatResponseFormat.ForJsonSchema</c> (esquema generado de este tipo) y se valida a mano en
 /// <c>clsValidadorRespuestaAgente</c>. Es interna: hacia <c>/web/chat</c> solo sale <see cref="Texto"/>; precio, margen y PDF
 /// salen de las herramientas del turno, nunca de aquí.
@@ -60,9 +60,9 @@ public enum TipoRespuestaAgente
 }
 
 /// <summary>
-/// Acción sugerida al comercial. Cada una corresponde a una herramienta retirada del agente cotizador legado (HU-013.9, #105) que
-/// debía estar declarada en el turno: el asistente por folio no declara ninguna, así que el validador rechaza cualquier acción sugerida
-/// (sus propuestas van en <c>accion_propuesta</c>). Se conserva en el esquema de la respuesta final.
+/// Acción sugerida al comercial. Cada una exige que su herramienta esté declarada en el turno: el asistente por folio no declara
+/// ninguna, así que el validador rechaza cualquier acción sugerida (sus propuestas van en <c>accion_propuesta</c>). Se conserva en
+/// el esquema de la respuesta final.
 /// </summary>
 public enum AccionSugeridaAgente
 {

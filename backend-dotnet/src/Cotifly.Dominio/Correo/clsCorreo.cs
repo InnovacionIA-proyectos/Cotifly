@@ -26,7 +26,7 @@ public sealed class clsCorreo
     public string? Error { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
 
-    // HU-033 (#199, ADR-023, script 13): seguimiento del envío asíncrono por MailSender.
+    // Seguimiento del envío asíncrono por MailSender (ADR-023, script 13).
 
     /// <summary>Id del correo en MailSender (<c>id</c> del 202); <c>null</c> si MailSender no lo aceptó o el correo es anterior al 13.</summary>
     public Guid? IdMailSender { get; private set; }
@@ -50,8 +50,8 @@ public sealed class clsCorreo
     public DateTimeOffset? SiguienteConsultaAt { get; private set; }
 
     /// <summary>
-    /// Auditoría #199: cuándo MailSender lo aceptó por última vez (el envío o un reintento). La edad máxima de la consulta se mide desde aquí
-    /// (no desde <see cref="CreatedAt"/>): si no, un reintento de un correo de más de 24 h quedaba <c>fallido</c> en la primera consulta.
+    /// Cuándo MailSender lo aceptó por última vez (el envío o un reintento). La edad máxima de la consulta se mide desde aquí
+    /// (no desde <see cref="CreatedAt"/>) para que un reintento de un correo de más de 24 h no quede <c>fallido</c> en la primera consulta.
     /// <c>null</c> en un correo anterior: se usa <see cref="CreatedAt"/>.
     /// </summary>
     public DateTimeOffset? EncoladoAt { get; private set; }
@@ -60,7 +60,7 @@ public sealed class clsCorreo
     public const string PrefijoIncierto = "Resultado incierto: ";
 
     /// <summary>
-    /// Auditoría #199: MailSender no respondió al encolarlo (tiempo agotado) y no se sabe si lo encoló. Es <see cref="EstadoCorreo.Fallido"/>
+    /// MailSender no respondió al encolarlo (tiempo agotado) y no se sabe si lo encoló. Es <see cref="EstadoCorreo.Fallido"/>
     /// sin <see cref="IdMailSender"/>, pero CUENTA para la deduplicación de 5 minutos: un reenvío inmediato podría duplicar el correo.
     /// </summary>
     public bool Incierto => Estado == EstadoCorreo.Fallido && IdMailSender is null && Error is not null
@@ -146,7 +146,7 @@ public sealed class clsCorreo
     public const int LargoMaximoError = 2000;
 
     /// <summary>
-    /// HU-033: aplica el estado que reporta MailSender. <paramref name="siguiente"/> es la próxima consulta si sigue en curso (se ignora en
+    /// Aplica el estado que reporta MailSender. <paramref name="siguiente"/> es la próxima consulta si sigue en curso (se ignora en
     /// un estado final). Devuelve <c>true</c> si cambió algo que ve el comercial (estado, error, intentos o fecha de envío).
     /// </summary>
     public bool ActualizarEntrega(EstadoCorreo estado, string? error, int? intentos, DateTimeOffset? enviadoAt, DateTimeOffset ahora, DateTimeOffset? siguiente)

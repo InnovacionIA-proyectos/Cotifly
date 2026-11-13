@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Cotifly.Api.Administracion.Controllers;
 
 /// <summary>
-/// Sincronización del margen de SAP TM (HU-042.2, #243, ADR-027; <c>specs/openapi.yaml</c> tag <c>admin</c>). Solo gerencia
+/// Sincronización del margen de SAP TM (ADR-027; <c>specs/openapi.yaml</c> tag <c>admin</c>). Solo gerencia
 /// (<c>gerente_comercial</c> o <c>director</c>), como el resto de <c>/web/admin/*</c>: política <see cref="clsPoliticas.GerenteComercial"/> aquí
 /// y revalidación del rol en el caso de uso.
 /// </summary>

@@ -4,10 +4,10 @@ using System.Text.Json;
 namespace Cotifly.Infraestructura.IA.Services;
 
 /// <summary>
-/// Reintentos del SDK de OpenAI para <c>openai_compatible</c> (HU-003.6, issue #84). Igual que la política por defecto (3 reintentos
+/// Reintentos del SDK de OpenAI para <c>openai_compatible</c>. Igual que la política por defecto (3 reintentos
 /// con espera exponencial ante 408, 429 y 5xx), salvo un 429 de enfriamiento del gateway: OmniRoute responde
 /// <c>{"error": {"code": "model_cooldown", "reset_seconds": 33311}}</c> cuando todas sus credenciales del modelo están en
-/// enfriamiento (horas). Reintentar no sirve y alargaba el turno 100 a 160 s; sin reintento, <c>clsChatClientConRespaldo</c> pasa de
+/// enfriamiento (horas). Reintentar no sirve y solo alarga el turno; sin reintento, <c>clsChatClientConRespaldo</c> pasa de
 /// inmediato a <c>IA:Fallbacks</c>. También se corta si <c>reset_seconds</c> supera el tiempo máximo de la llamada.
 /// </summary>
 public sealed class clsPoliticaReintentoGateway(int timeoutSeg, int maxReintentos = 3) : ClientRetryPolicy(maxReintentos)

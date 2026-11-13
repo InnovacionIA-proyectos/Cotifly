@@ -12,14 +12,14 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// Camiones de una ruta según el cubicador (HU-021.5, #133, con el contrato de HU-023.1, #156; ADR-019, decisión 7): manda la ruta a
+/// Camiones de una ruta según el cubicador (ADR-019): manda la ruta a
 /// <c>POST /recomendaciones</c> (<see cref="IClsCubicador.RecomendarAsync"/>: el id de la ruta, la clase de viaje como preferencia, el
 /// <c>idUsuarioExterno</c> del comercial y cada mercancía con su <c>codigoMercancia</c>) y crea <b>un camión por vehículo</b> de la
 /// respuesta, en su orden, con el código de vehículo y de carrocería, el peso que lleva, el volumen, los dos porcentajes de llenado y el
 /// <c>idRecomendacionVehiculo</c>.
 /// </summary>
 /// <remarks>
-/// HU-032 (#197, ADR-022): el vehículo que eligió el comercial (<c>tipo_vehiculo</c>/<c>carroceria</c> de la ruta) es el RESPALDO del
+/// El vehículo que eligió el comercial (ADR-022) (<c>tipo_vehiculo</c>/<c>carroceria</c> de la ruta) es el RESPALDO del
 /// cubicador. Orden de decisión por ruta:
 /// <list type="number">
 /// <item><b>Sin mercancías cubicables</b> (<see cref="clsLineaSolicitudCosteo.Cubicabilidad"/> distinta de <c>Cubicable</c>: solo el
@@ -38,11 +38,11 @@ namespace Cotifly.Aplicacion.Costeo.Services;
 /// </list>
 /// <list type="bullet">
 /// <item><b>Condicionada</b>: no se parte ni se bloquea nada; los camiones se crean como vienen. Una línea informativa en el log.</item>
-/// <item>Durante la transición, una mercancía con el <c>id_tipo_mercancia</c> anterior se traduce al código con el catálogo; si no se
+/// <item>Una mercancía con el <c>id_tipo_mercancia</c> obsoleto se traduce al código con el catálogo; si no se
 /// puede, la ruta va al respaldo con el elegido.</item>
 /// <item><b>Rechazo de la petición, respuesta inválida o llave rechazada</b> (<c>MERCANCIAS_REQUERIDAS</c>, <c>MERCANCIA_DESCONOCIDA</c>,
 /// <c>MERCANCIA_NO_CUBICABLE</c>, <c>DIMENSIONES_INVALIDAS</c>, <c>CUBICADOR_RESPUESTA_INVALIDA</c>, <c>CUBICADOR_NO_AUTORIZADO</c>): el
-/// error vuelve tal cual y la captura no guarda nada. Nunca van al respaldo: esconderían un dato malo (HU-023.1, contra el fallo silencioso).</item>
+/// error vuelve tal cual y la captura no guarda nada. Nunca van al respaldo: esconderían un dato malo (contra el fallo silencioso).</item>
 /// <item><b>Caída del cubicador</b> (tiempo agotado, 5xx, red, otro rechazo no previsto o presupuesto de la captura
 /// agotado): con <see cref="IClsCubicador.RespaldoSiFalla"/> la ruta va al respaldo, con un warning de código estable
 /// <see cref="EventoRespaldo"/> y el contador <see cref="MetricaRespaldos"/> (etiqueta <c>motivo</c>); sin él,
@@ -78,13 +78,13 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         clsCodigosError.MercanciaDesconocida,
         clsCodigosError.MercanciaNoCubicable,
         clsCodigosError.DimensionesInvalidas,
-        // HU-023 (#176): más de 10.000 unidades (lo valida el adaptador antes de llamar, o el 400 del cubicador): se parte la carga.
+        // Más de 10.000 unidades (lo valida el adaptador antes de llamar, o el 400 del cubicador): se parte la carga.
         clsCodigosError.CubicacionDemasiadoGrande,
         clsCodigosError.CubicadorRespuestaInvalida,
-        // D1 (E2E 2026-10-16): el 422 del cubicador es un rechazo de los datos de la carga (con la mercancía si la señala).
+        // El 422 del cubicador es un rechazo de los datos de la carga (con la mercancía si la señala).
         clsCodigosLineaSolicitud.PosicionInvalida,
         clsCodigosError.CubicadorPeticionRechazada,
-        // Auditoría de HU-023: una llave mala no puede convertirse en silencio en rutas sin vehículo.
+        // Una llave mala no puede convertirse en silencio en rutas sin vehículo.
         clsCodigosError.CubicadorNoAutorizado,
     };
 
@@ -126,7 +126,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         PlanificarAsync(usuarioId, rutaId, ruta, ocupadoEsError: false, cancellationToken);
 
     /// <summary>
-    /// Validación de la rama de los defectos del 2026-10-16 (punto a): en la licitación en segundo plano, <c>CUBICADOR_OCUPADO</c> vuelve tal
+    /// En la licitación en segundo plano, <c>CUBICADOR_OCUPADO</c> vuelve tal
     /// cual (sin respaldo y sin marcar la captura como caída) para que la ruta vuelva a la cola sin gastar un intento.
     /// </summary>
     public Task<clsResultado<clsPlanRuta>> PlanificarEnSegundoPlanoAsync(
@@ -134,7 +134,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
         PlanificarAsync(usuarioId, rutaId, ruta, ocupadoEsError: true, cancellationToken);
 
     /// <summary>
-    /// Endurecimiento B (#199): el respaldo por caída del cubicador sin llamarlo (<c>usar_respaldo</c> de la licitación): el mismo
+    /// El respaldo por caída del cubicador sin llamarlo (<c>usar_respaldo</c> de la licitación): el mismo
     /// <see cref="RespaldoAsync"/> que usa el camino en segundo plano, con la causa <see cref="CausaNoDisponible"/>.
     /// </summary>
     public Task<clsResultado<clsPlanRuta>> PlanificarRespaldoAsync(
@@ -149,7 +149,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
     {
         ArgumentNullException.ThrowIfNull(ruta);
 
-        // HU-032 (#197): sin mercancías cubicables no se llama al cubicador: la ruta usa el vehículo elegido (validado en la captura).
+        // Sin mercancías cubicables no se llama al cubicador: la ruta usa el vehículo elegido (validado en la captura).
         var cubicabilidad = ruta.Cubicabilidad;
         if (cubicabilidad != CubicabilidadRuta.Cubicable)
         {
@@ -227,7 +227,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
             {
                 _logger.LogWarning("El cubicador no aceptó la ruta {RutaId} ({Codigo}: {Detalle}): no se guarda la captura.",
                     rutaId, recomendacion.Error.Codigo, recomendacion.Error.Detalle);
-                // Solo el código, el mensaje y la mercancía señalada (item y campo; D-1019-1): el detalle interno (estado HTTP) y las marcas
+                // Solo el código, el mensaje y la mercancía señalada (item y campo): el detalle interno (estado HTTP) y las marcas
                 // internas quedan en el log.
                 return new clsErrorDominio(recomendacion.Error.Codigo, recomendacion.Error.Mensaje) { Datos = DatosMercancia(recomendacion.Error.Datos) };
             }
@@ -241,7 +241,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
     }
 
     /// <summary>
-    /// D-1019-1: de los datos de un rechazo del cubicador solo pasan <c>item</c> (la mercancía, base 0) y <c>campo</c>; sin <c>item</c>,
+    /// De los datos de un rechazo del cubicador solo pasan <c>item</c> (la mercancía, base 0) y <c>campo</c>; sin <c>item</c>,
     /// ninguno.
     /// </summary>
     public static Dictionary<string, object?>? DatosMercancia(IReadOnlyDictionary<string, object?>? datos)
@@ -261,7 +261,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
     }
 
     /// <summary>
-    /// Transición de HU-023: una mercancía con el <c>id_tipo_mercancia</c> anterior (uuid) y sin <c>codigoMercancia</c> se traduce al
+    /// Compatibilidad: una mercancía con el <c>id_tipo_mercancia</c> anterior (uuid) y sin <c>codigoMercancia</c> se traduce al
     /// código con el catálogo del cubicador (<c>GET /tipos-mercancia</c>, con caché; se lee una vez por petición). Un id que no está en el
     /// catálogo deja la mercancía sin código (la ruta va al respaldo).
     /// </summary>
@@ -368,12 +368,12 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
 
     private static string? Limpio(string? valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
 
-    /// <summary>HU-032: un camión con el vehículo elegido TAL CUAL (ya validado en la captura) y el peso de la ruta.</summary>
+    /// <summary>Un camión con el vehículo elegido TAL CUAL (ya validado en la captura) y el peso de la ruta.</summary>
     private static clsResultado<clsPlanRuta> Elegido(clsLineaSolicitudCosteo ruta, IReadOnlyList<clsAdvertenciaCubicador>? avisos) =>
         clsResultado<clsPlanRuta>.Exito(new clsPlanRuta(clsPlanificadorCamionSinVehiculo.Camiones(ruta), null, avisos));
 
     /// <summary>
-    /// HU-032 (#197): el respaldo de una ruta que SÍ iba al cubicador (sin selección, caída, ocupado, presupuesto o mercancía sin traducir):
+    /// El respaldo de una ruta que SÍ iba al cubicador (sin selección, caída, ocupado, presupuesto o mercancía sin traducir):
     /// un camión con el vehículo elegido validado TARDE contra Nexo (<see cref="ValidarElegidoAsync"/>) y su aviso; sin elegido, sin vehículo.
     /// </summary>
     private async Task<clsResultado<clsPlanRuta>> RespaldoAsync(
@@ -391,7 +391,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
     }
 
     /// <summary>
-    /// HU-032 (#197): validación tardía del vehículo elegido contra el catálogo y el alias de Nexo (la misma regla M1 de la captura,
+    /// Validación tardía del vehículo elegido contra el catálogo y el alias de Nexo (la misma regla de la captura,
     /// <see cref="IClsValidadorCatalogosCaptura.ValidarLineasAsync"/>): devuelve el vehículo que viaja, escrito como en Nexo, y si el elegido
     /// era válido. Un tipo de vehículo que no es de Nexo deja el camión sin vehículo; una carrocería que no lo es, sin carrocería. Con el
     /// catálogo maestro caído (sin copia utilizable) el tipo va TAL CUAL: el envío lo resuelve contra la copia vencida o el alias y, si no,
@@ -449,7 +449,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
             _logger.LogInformation(
                 "El cubicador no seleccionó vehículo en la ruta {RutaId} ({Motivo}): el camión lleva el vehículo elegido o, sin él, queda sin vehículo para la Mesa de Costeo de Nexo.",
                 rutaId, recomendacion.MotivoSinSeleccion ?? "sin motivo");
-            // HU-023.3 y HU-032 (#197): la ruta guarda el resultado y el motivo; el camión va con el vehículo elegido (validado aquí contra
+            // La ruta guarda el resultado y el motivo; el camión va con el vehículo elegido (validado aquí contra
             // Nexo: VEHICULO_ELEGIDO_USADO o VEHICULO_ELEGIDO_INVALIDO) o sin vehículo, y sin recomendación.
             return await RespaldoAsync(usuarioId, ruta, recomendacion.ACubicacionRuta(), CausaSinSeleccion, cancellationToken);
         }
@@ -474,7 +474,7 @@ public sealed class clsPlanificadorCamionesCubicador : IClsPlanificadorCamiones
     }
 
     /// <summary>
-    /// HU-032 (#197): <c>VEHICULO_AJUSTADO_POR_CUBICADOR</c> si había un vehículo elegido y algún camión del cubicador lleva otro tipo de
+    /// <c>VEHICULO_AJUSTADO_POR_CUBICADOR</c> si había un vehículo elegido y algún camión del cubicador lleva otro tipo de
     /// vehículo (o, si se eligió la carrocería, otra carrocería); <c>null</c> si no.
     /// </summary>
     private static IReadOnlyList<clsAdvertenciaCubicador>? AvisoAjustado(clsLineaSolicitudCosteo ruta, IReadOnlyList<clsCamionPlaneado> camiones)

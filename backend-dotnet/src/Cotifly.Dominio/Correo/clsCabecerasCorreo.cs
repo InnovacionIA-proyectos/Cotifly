@@ -3,9 +3,9 @@ using System.Globalization;
 namespace Cotifly.Dominio.Correo;
 
 /// <summary>
-/// DEF-1027B-2 (#228, ADR-023): reglas de lo que viaja como CABECERA del correo (asunto, remitente, destinatarios, nombre del adjunto,
+/// Reglas de lo que viaja como CABECERA del correo (asunto, remitente, destinatarios, nombre del adjunto,
 /// correlación). Un salto de línea en una cabecera permite inyectar otras (<c>"Hola\r\nBcc: intruso@..."</c>): nada se sanea en silencio,
-/// se rechaza. Las usan el caso de uso (400 <c>CORREO_INVALIDO</c>), la vista previa y, como defensa en profundidad, el transporte.
+/// se rechaza (ADR-023). Las usan el caso de uso (400 <c>CORREO_INVALIDO</c>), la vista previa y, como defensa en profundidad, el transporte.
 /// </summary>
 public static class clsCabecerasCorreo
 {

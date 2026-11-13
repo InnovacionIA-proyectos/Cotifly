@@ -87,8 +87,8 @@ public static class clsConcurrenciaHttp
 /// <summary>
 /// Mutación de la etapa final con <c>If-Match</c> obligatorio (ADR-018 §8): sin el encabezado responde 428
 /// <c>PRECONDICION_REQUERIDA</c> antes de ejecutar la acción (y antes de leer el cuerpo); si viene, deja la versión en
-/// <see cref="HttpContext.Items"/> (<see cref="clsConcurrenciaHttp.VersionDe"/>). Lo usan el margen y los conexos (#98) y, con el
-/// mismo patrón, conexos en Nexo, re-solicitar y textos (#99, #100, #101).
+/// <see cref="HttpContext.Items"/> (<see cref="clsConcurrenciaHttp.VersionDe"/>). Lo usan el margen, los conexos, los conexos en
+/// Nexo, la re-solicitud y los textos.
 /// </summary>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
 public sealed class clsRequiereIfMatchAttribute : Attribute, IResourceFilter

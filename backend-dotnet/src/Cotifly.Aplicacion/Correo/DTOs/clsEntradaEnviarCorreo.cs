@@ -12,7 +12,7 @@ namespace Cotifly.Aplicacion.Correo.DTOs;
 /// <param name="Folio">Cotización por folio (endpoint web).</param>
 /// <param name="Cc">Copias.</param>
 /// <param name="Asunto">Por defecto <c>Cotización {folio} — Botero Soto</c> (máximo 300).</param>
-/// <param name="Cuerpo">Por defecto la plantilla del Python (máximo 5000).</param>
+/// <param name="Cuerpo">Por defecto la plantilla del correo (máximo 5000).</param>
 /// <param name="ThreadId">Hilo de la conversación, para la auditoría.</param>
 public sealed record clsEntradaEnviarCorreo(
     Guid UsuarioId,
@@ -25,7 +25,7 @@ public sealed record clsEntradaEnviarCorreo(
     string? ThreadId = null);
 
 /// <summary>
-/// Salida del envío (<c>RespuestaEnvio</c>: <c>{enviado, message_id}</c>, más <c>registrado_en_bd</c> de la herramienta). HU-033 (#199):
+/// Salida del envío (<c>RespuestaEnvio</c>: <c>{enviado, message_id}</c>, más <c>registrado_en_bd</c> de la herramienta).
 /// <c>enviado = true</c> significa que MailSender ACEPTÓ el correo (202); la entrega real se ve en <see cref="Estado"/> y en el historial
 /// (<c>GET .../correos</c>).
 /// </summary>
@@ -36,13 +36,13 @@ public sealed record clsEntradaEnviarCorreo(
 /// </param>
 public sealed record clsSalidaEnvioCorreo(bool Enviado, string MessageId, bool RegistradoEnBd)
 {
-    /// <summary>HU-033: id del correo en Cotifly (fila de <c>Correos</c>; el del historial y del reintento).</summary>
+    /// <summary>Id del correo en Cotifly (fila de <c>Correos</c>; el del historial y del reintento).</summary>
     public Guid CorreoId { get; init; }
 
-    /// <summary>HU-033: estado del correo al responder (<c>encolado</c>).</summary>
+    /// <summary>Estado del correo al responder (<c>encolado</c>).</summary>
     public string Estado { get; init; } = "encolado";
 
-    /// <summary>HU-033: buzón de pruebas al que se redirigió (fuera de producción); <c>null</c> si va a los destinatarios reales.</summary>
+    /// <summary>Buzón de pruebas al que se redirigió (fuera de producción); <c>null</c> si va a los destinatarios reales.</summary>
     public string? RedirigidoA { get; init; }
 }
 
@@ -58,33 +58,33 @@ public sealed record clsBorradorCorreo(
 /// <param name="Adjunto">Nombre del PDF que se adjuntará.</param>
 public sealed record clsVistaPreviaCorreo(string Asunto, string Cuerpo, IReadOnlyList<string> Para, IReadOnlyList<string> Cc, string Adjunto)
 {
-    /// <summary>HU-033: el cuerpo en HTML tal como lo recibe el cliente (texto, resumen con el total y firma; sin el aviso de pruebas).</summary>
+    /// <summary>El cuerpo en HTML tal como lo recibe el cliente (texto, resumen con el total y firma; sin el aviso de pruebas).</summary>
     public string? CuerpoHtml { get; init; }
 
-    /// <summary>HU-033: bloque fijo del resumen (precio por ruta y total, sin desglose); <c>null</c> si la cotización no tiene total.</summary>
+    /// <summary>Bloque fijo del resumen (precio por ruta y total, sin desglose); <c>null</c> si la cotización no tiene total.</summary>
     public Services.clsResumenCorreo? Resumen { get; init; }
 
-    /// <summary>HU-033: copia oculta que se agrega al enviar (el correo del comercial), o <c>null</c> si no tiene correo.</summary>
+    /// <summary>Copia oculta que se agrega al enviar (el correo del comercial), o <c>null</c> si no tiene correo.</summary>
     public string? CopiaOculta { get; init; }
 
-    /// <summary>HU-033: ¿el ambiente redirige los correos al buzón de pruebas? (aviso "ambiente de pruebas" en el frontend).</summary>
+    /// <summary>¿El ambiente redirige los correos al buzón de pruebas? (aviso "ambiente de pruebas" en el frontend).</summary>
     public bool EntornoPruebas { get; init; }
 
-    /// <summary>HU-033: buzón de pruebas que recibirá el correo con <see cref="EntornoPruebas"/>; <c>null</c> en producción.</summary>
+    /// <summary>Buzón de pruebas que recibirá el correo con <see cref="EntornoPruebas"/>; <c>null</c> en producción.</summary>
     public string? RedirigidoA { get; init; }
 
-    /// <summary>HU-033: texto del aviso de pruebas para mostrar tal cual; <c>null</c> en producción.</summary>
+    /// <summary>Texto del aviso de pruebas para mostrar tal cual; <c>null</c> en producción.</summary>
     public string? Aviso { get; init; }
 
     /// <summary>
-    /// HU-045.3 (#265, B5): las rutas con el seguro de la mercancía marcado sin valor de la mercancía (no suma ni sale en el PDF); <c>null</c>
+    /// Las rutas con el seguro de la mercancía marcado sin valor de la mercancía (no suma ni sale en el PDF); <c>null</c>
     /// si no hay ninguna. El mismo aviso de la vista del costeo.
     /// </summary>
     public Costeo.DTOs.clsAvisoSeguro? AvisoSeguro { get; init; }
 }
 
 /// <summary>
-/// HU-033 (#199): un envío del historial de la cotización (<c>GET /web/cotizaciones/{folio}/correos</c>), con el estado que reporta
+/// Un envío del historial de la cotización (<c>GET /web/cotizaciones/{folio}/correos</c>), con el estado que reporta
 /// MailSender. Los destinatarios son los originales aunque el correo se haya redirigido al buzón de pruebas.
 /// </summary>
 public sealed record clsEnvioCorreoHistorial(

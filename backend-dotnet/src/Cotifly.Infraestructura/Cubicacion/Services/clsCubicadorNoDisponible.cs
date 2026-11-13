@@ -5,7 +5,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Infraestructura.Cubicacion.Services;
 
 /// <summary>
-/// Cubicador sin configurar (<c>Cubicador:UrlBase</c> vacía, HU-021.5, #133): <see cref="EstaConfigurado"/> = <c>false</c>, así que la
+/// Cubicador sin configurar (<c>Cubicador:UrlBase</c> vacía): <see cref="EstaConfigurado"/> = <c>false</c>, así que la
 /// captura usa el respaldo (un camión sin vehículo por ruta) sin llamarlo; si alguien lo llama igual, responde
 /// <c>CUBICADOR_NO_DISPONIBLE</c>. Elegido por <c>clsFabricaCubicador</c>.
 /// </summary>

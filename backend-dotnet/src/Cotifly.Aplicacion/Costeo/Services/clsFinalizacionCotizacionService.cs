@@ -11,8 +11,8 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// HU-036.2 (#206): finalizar la cotización (<c>POST /web/cotizaciones/{folio}/finalizar</c>, con <c>If-Match</c>). El comercial acepta el
-/// precio y desde ahí queda congelado (ADR-015 §5, HU-036).
+/// Finaliza la cotización (<c>POST /web/cotizaciones/{folio}/finalizar</c>, con <c>If-Match</c>). El comercial acepta el
+/// precio y desde ahí queda congelado (ADR-015 §5).
 /// </summary>
 public interface IClsFinalizacionCotizacionService
 {
@@ -20,8 +20,8 @@ public interface IClsFinalizacionCotizacionService
     /// La cotización finalizada (o la misma sin cambios si ya lo estaba: idempotente), o el error: <c>COTIZACION_NO_ENCONTRADA</c> (no
     /// existe o no es del comercial), <c>CONFLICTO_CONCURRENCIA</c> (el <c>If-Match</c> no es la versión vigente, también si ya estaba
     /// finalizada) o <c>COTIZACION_NO_FINALIZABLE</c> (<c>estado_costeo</c> distinto de <c>autocosteo</c> y <c>entregada</c>, conexos de Nexo
-    /// pendientes de leer o, #228, conexos que todavía no están en Nexo: <c>detalle.motivo = conexos_pendientes_en_nexo</c>).
-    /// HU-046.3 (#269): también <c>COTIZACION_NO_FINALIZABLE</c> con <c>detalle.motivo = medidas_obligatorias_faltantes</c> si una ruta
+    /// pendientes de leer o conexos que todavía no están en Nexo: <c>detalle.motivo = conexos_pendientes_en_nexo</c>).
+    /// También <c>COTIZACION_NO_FINALIZABLE</c> con <c>detalle.motivo = medidas_obligatorias_faltantes</c> si una ruta
     /// cotizable no tiene una medida obligatoria de la política de seguros, salvo con <paramref name="justificacion"/> (que salta SOLO ese
     /// bloqueo y queda auditada); <c>JUSTIFICACION_REQUERIDA</c> (400, con <c>detalle.minimo</c> y <c>detalle.maximo</c>) si la justificación
     /// viene fuera de <see cref="clsCotizacionSolicitud.LargoMinimoJustificacion"/> a <see cref="clsCotizacionSolicitud.LargoMaximoJustificacion"/>
@@ -43,10 +43,10 @@ public interface IClsFinalizacionCotizacionService
 /// <para><b>Concurrencia.</b> La escritura se confirma con la versión del <c>If-Match</c> sobre la fila bloqueada
 /// (<see cref="IClsUnitOfWork.GuardarCambiosSiVersionAsync"/>) y sube la versión de negocio. Si el polling cambió el precio entre la lectura
 /// del comercial y su clic, la versión ya no coincide: 409 y el comercial recarga (nunca finaliza un precio que no vio). Si la finalización
-/// gana, la vuelta del polling que se cruzó no guarda (conflicto) y la siguiente ve la cotización finalizada (precio congelado, #208).</para>
+/// gana, la vuelta del polling que se cruzó no guarda (conflicto) y la siguiente ve la cotización finalizada (precio congelado).</para>
 /// <para>Cada finalización que cambia algo, o que se rechaza, queda en <c>EventosHerramienta</c> (<see cref="HerramientaAuditoria"/>,
 /// sin montos). Re-finalizar no audita (no cambia nada).</para>
-/// <para>HU-046.3 (#269): la política de seguros se lee de sus tablas en cada finalización (sin caché) y se evalúa sobre las rutas
+/// <para>La política de seguros se lee de sus tablas en cada finalización (sin caché) y se evalúa sobre las rutas
 /// cotizables, después de completar el <c>codigoServicio</c> de los conexos que no lo tienen con el índice del catálogo de Nexo. Si la
 /// política no se puede leer, la finalización falla (no se finaliza sin evaluarla). La justificación queda en la entrada de la auditoría y,
 /// si saltó el bloqueo, las medidas que faltaban en la salida (códigos, sin montos).</para>
@@ -72,7 +72,7 @@ public sealed class clsFinalizacionCotizacionService(
     public async Task<clsResultado<clsCotizacionSolicitud>> FinalizarAsync(
         Guid usuarioId, string folio, int versionEsperada, string? justificacion, CancellationToken cancellationToken = default)
     {
-        // HU-046.3 (#269, contrato del 2026-11-10): una justificación vacía (ausente, null o solo espacios) es como no mandarla. El largo
+        // Una justificación vacía (ausente, null o solo espacios) es como no mandarla. El largo
         // (10 a 500 caracteres sin los espacios de los extremos) se valida DENTRO, justo después del If-Match.
         var motivo = string.IsNullOrWhiteSpace(justificacion) ? null : justificacion.Trim();
         var cotizacion = usuarioId == Guid.Empty || string.IsNullOrWhiteSpace(folio)
@@ -96,7 +96,7 @@ public sealed class clsFinalizacionCotizacionService(
                         finalizada_at = cotizacion.FinalizadaAt,
                         estado_costeo = cotizacion.EstadoCosteo is { } estado ? clsCodigoEnum.ACodigo(estado) : null,
                         version = cotizacion.VersionNegocio,
-                        // HU-046.3 (#269): las medidas obligatorias que faltaban y que la justificación dejó pasar (vacío si no faltaba ninguna).
+                        // Las medidas obligatorias que faltaban y que la justificación dejó pasar (vacío si no faltaba ninguna).
                         justificacion_aplicada = omitidas.Count > 0,
                         medidas_omitidas = omitidas.Select(r => new { linea_orden = r.LineaOrden, medidas = r.Medidas.Select(m => m.Codigo).ToList() }).ToList(),
                     }
@@ -117,7 +117,7 @@ public sealed class clsFinalizacionCotizacionService(
             return (clsReglaPdfCosteo.Conflicto(cotizacion.Folio), false, []);
         }
 
-        // HU-046.3 (#269, contrato del 2026-11-10): la justificación, cuando viene, va de 10 a 500 caracteres (ya sin los espacios de los
+        // La justificación, cuando viene, va de 10 a 500 caracteres (ya sin los espacios de los
         // extremos); fuera de ese largo es 400 JUSTIFICACION_REQUERIDA con detalle.minimo y detalle.maximo. Se valida justo después del If-Match.
         if (justificacion is { } j &&
             (j.Length < clsCotizacionSolicitud.LargoMinimoJustificacion || j.Length > clsCotizacionSolicitud.LargoMaximoJustificacion))
@@ -127,9 +127,9 @@ public sealed class clsFinalizacionCotizacionService(
 
         var evaluable = !cotizacion.Finalizada && cotizacion.AdmiteFinalizar && !cotizacion.ConexosPendientesDeLeer;
         var pendientesEnNexo = evaluable ? await ConexosPendientesEnNexoAsync(cotizacion, usuarioId, cancellationToken) : 0;
-        // HU-046.3 (#269): la política de seguros de hoy (decisión 7: una finalizada no se recalcula; re-finalizar no la mira). B3 de la
-        // auditoría: solo si nada más bloquea (con conexos pendientes en Nexo el 409 es ese y no se lee la política).
-        // ORDEN (#259): MedidasPendientesAsync va DESPUÉS de ConexosPendientesEnNexoAsync. Esta guarda con GuardarCambiosAsync SIN versión
+        // La política de seguros vigente (una finalizada no se recalcula; re-finalizar no la mira). Solo si nada más bloquea (con
+        // conexos pendientes en Nexo el 409 es ese y no se lee la política).
+        // ORDEN: MedidasPendientesAsync va DESPUÉS de ConexosPendientesEnNexoAsync. Esta guarda con GuardarCambiosAsync SIN versión
         // (el registro del envío diferido); si se invirtiera, los codigoServicio completados en memoria se guardarían sin la versión del
         // If-Match. Los códigos solo se guardan con la escritura versionada de la finalización.
         IReadOnlyList<clsMedidasFaltantesRuta> medidas = [];
@@ -157,9 +157,9 @@ public sealed class clsFinalizacionCotizacionService(
     }
 
     /// <summary>
-    /// HU-046.3 (#269): las medidas obligatorias pendientes de las rutas cotizables con la política leída AHORA de sus tablas. Antes completa
+    /// Las medidas obligatorias pendientes de las rutas cotizables con la política leída AHORA de sus tablas. Antes completa
     /// en memoria el <c>codigoServicio</c> de los conexos que no lo tienen (se guarda con la finalización). Sin repositorio (pruebas que no
-    /// lo registran) no exige nada. Contrato del 2026-11-10: si la política no se puede leer, Finalizar responde 500 (la excepción se propaga,
+    /// lo registran) no exige nada. Si la política no se puede leer, Finalizar responde 500 (la excepción se propaga,
     /// se registra en el log y nada se guarda): no se finaliza sin evaluarla.
     /// </summary>
     private async Task<IReadOnlyList<clsMedidasFaltantesRuta>> MedidasPendientesAsync(
@@ -182,14 +182,14 @@ public sealed class clsFinalizacionCotizacionService(
             throw;
         }
 
-        // Decisión del usuario (2026-11-09): un conexo fallido_definitivo o incierto en Nexo no cumple la medida.
+        // Un conexo fallido_definitivo o incierto en Nexo no cumple la medida.
         var estados = await envioConexos.EstadosAsync(cotizacion, cancellationToken);
         return cotizacion.MedidasObligatoriasPendientes(politica,
             (ruta, conexo) => clsPoliticaSegurosCosteo.CuentaParaLaPolitica(estados.GetValueOrDefault((ruta.Id, conexo.IdServicioConexo))));
     }
 
     /// <summary>
-    /// 400 <c>JUSTIFICACION_REQUERIDA</c> (contrato del 2026-11-10) cuando la justificación viene fuera de 10 a 500 caracteres, con
+    /// 400 <c>JUSTIFICACION_REQUERIDA</c> cuando la justificación viene fuera de 10 a 500 caracteres, con
     /// <c>detalle.minimo</c> y <c>detalle.maximo</c>.
     /// </summary>
     private static clsErrorDominio JustificacionFueraDeLargo() =>
@@ -205,13 +205,13 @@ public sealed class clsFinalizacionCotizacionService(
         };
 
     /// <summary>
-    /// #228: conexos de las rutas cotizables (las rechazadas por la Mesa no cuentan: su conexo nunca llegará a Nexo) que todavía no están en
+    /// Conexos de las rutas cotizables (las rechazadas por la Mesa no cuentan: su conexo nunca llegará a Nexo) que todavía no están en
     /// la cotización de Nexo: <c>estado_nexo = pendiente</c> en el registro del envío diferido (<see cref="IClsEnvioConexosNexoService.EstadosAsync"/>,
     /// el mismo que ve el comercial en el costeo). <c>incierto</c> y <c>fallido_definitivo</c> no cuentan: el polling ya no los reintenta y
-    /// el costeo los muestra para revisarlos en Nexo. #259: si siguen pendientes, la cotización vuelve a la agenda (<see cref="ReencolarAsync"/>).
-    /// <para>Validación #228: con alguno pendiente se RELEE la cotización de Nexo y los que ya muestra quedan <c>enviado</c>
+    /// el costeo los muestra para revisarlos en Nexo. Si siguen pendientes, la cotización vuelve a la agenda (<see cref="ReencolarAsync"/>).
+    /// <para>Con alguno pendiente se RELEE la cotización de Nexo y los que ya muestra quedan <c>enviado</c>
     /// (<see cref="IClsEnvioConexosNexoService.RegistrarConfirmadosAsync"/>) antes de contar otra vez. Un registro que se quedó en
-    /// <c>pendiente</c> aunque Nexo ya tenga el conexo (agregado con el POST antes de #228, o si su registro falló) bloquearía para siempre
+    /// <c>pendiente</c> aunque Nexo ya tenga el conexo (por ejemplo, si su registro falló) bloquearía para siempre
     /// una entregada, que el polling ya no consulta. Si Nexo no responde, se cuenta lo que dice el registro (falla cerrado).</para>
     /// </summary>
     private async Task<int> ConexosPendientesEnNexoAsync(clsCotizacionSolicitud cotizacion, Guid usuarioId, CancellationToken cancellationToken)
@@ -243,11 +243,10 @@ public sealed class clsFinalizacionCotizacionService(
     }
 
     /// <summary>
-    /// #259: con conexos todavía pendientes, la cotización vuelve a la agenda del polling para que el envío diferido los procese (los envía o
+    /// Con conexos todavía pendientes, la cotización vuelve a la agenda del polling para que el envío diferido los procese (los envía o
     /// los deja <c>fallido_definitivo</c>) en segundos; finalizar sigue respondiendo 409 y NUNCA hace el POST de conexos: lo hace el worker
-    /// con su reclamo, así que no hay doble envío. Solo se agenda una cotización que está FUERA de la agenda (las atascadas antes de #259),
-    /// con una actualización condicional en la base (<see cref="IClsCotizacionRepository.ReencolarConsultaCosteoAsync"/>, auditoría M1 y
-    /// B2): nunca pisa un reclamo vigente del worker (la cotización en memoria se leyó antes de releer Nexo) y varios clics no adelantan la
+    /// con su reclamo, así que no hay doble envío. Solo se agenda una cotización que está FUERA de la agenda,
+    /// con una actualización condicional en la base (<see cref="IClsCotizacionRepository.ReencolarConsultaCosteoAsync"/>): nunca pisa un reclamo vigente del worker (la cotización en memoria se leyó antes de releer Nexo) y varios clics no adelantan la
     /// espera de los reintentos ni agotan su tope. Escribe de inmediato, sin la unidad de trabajo.
     /// </summary>
     private async Task ReencolarAsync(clsCotizacionSolicitud cotizacion)

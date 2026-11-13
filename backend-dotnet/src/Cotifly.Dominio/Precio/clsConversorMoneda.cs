@@ -4,7 +4,7 @@ using Cotifly.Dominio.Comun;
 namespace Cotifly.Dominio.Precio;
 
 /// <summary>
-/// Monedas de la cotización y conversión del precio (HU-012.2, ADR-014). El costeo y el precio se calculan en pesos
+/// Monedas de la cotización y conversión del precio (ADR-014). El costeo y el precio se calculan en pesos
 /// (<see cref="clsCalculadoraPrecio"/>, a pesos enteros); en dólares el precio es <c>precio en pesos / TRM</c> redondeado a
 /// <see cref="DecimalesDolares"/> decimales con <see cref="MidpointRounding.ToEven"/> sobre <see cref="decimal"/>. La TRM la aporta la
 /// fuente oficial, nunca el LLM.

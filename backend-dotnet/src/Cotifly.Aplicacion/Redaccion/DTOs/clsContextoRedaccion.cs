@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace Cotifly.Aplicacion.Redaccion.DTOs;
 
 /// <summary>
-/// Lo ÚNICO que recibe el redactor de la IA (HU-013.5, ADR-018 §2a): nombres y textos de presentación. Por diseño no tiene ningún
+/// Lo ÚNICO que recibe el redactor de la IA (ADR-018 §2a): nombres y textos de presentación. Por diseño no tiene ningún
 /// campo numérico: nunca lleva costos, margen, precios, totales ni la TRM (con el margen y un precio, el modelo podría deducir el
 /// costo de Nexo). Tampoco lleva el folio, el NIT ni el nombre o el correo del comercial (minimización: el prompt prohíbe firmar). El
 /// nombre del cliente sí va al proveedor de IA (ADR-018 §2a, Ley 1581). Cada texto llega recortado a <see cref="LargoMaximoCampo"/>.
@@ -28,13 +28,13 @@ public sealed record clsContextoRedaccion(
     /// <summary>Rutas que se envían al modelo como máximo (un pliego puede tener hasta 1000).</summary>
     public const int MaximoRutas = 30;
 
-    /// <summary>Caracteres máximos de las indicaciones del comercial para el redactor (HU-013.18, #296).</summary>
+    /// <summary>Caracteres máximos de las indicaciones del comercial para el redactor.</summary>
     public const int LargoMaximoIndicaciones = 500;
 
     /// <summary>
-    /// Indicaciones del comercial para orientar la redacción (HU-013.18, #296): una PREFERENCIA de enfoque o tono (ej. "destacar la
+    /// Indicaciones del comercial para orientar la redacción: una PREFERENCIA de enfoque o tono (ej. "destacar la
     /// experiencia en carga refrigerada, tono cercano"), nunca una instrucción que pase por encima de las reglas estrictas del prompt. Es
-    /// opcional: cuando no viene (<c>null</c>) el contexto queda idéntico al de siempre, porque solo se serializa a <c>indicaciones_comercial</c>
+    /// opcional: cuando no viene (<c>null</c>) el contexto no cambia, porque solo se serializa a <c>indicaciones_comercial</c>
     /// si trae texto (<see cref="JsonIgnoreCondition.WhenWritingNull"/>). No es la nota de la Mesa de Costeo ni se guarda en la cotización.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -57,7 +57,7 @@ public sealed record clsIdentidadRedactor(string Proveedor, string Modelo, strin
 public sealed record clsTextosBase(string Asunto, string Introduccion);
 
 /// <summary>
-/// Resultado de la redacción (HU-013.5): los textos (de la IA validados, o los estándar si no) y lo que se audita: proveedor,
+/// Resultado de la redacción: los textos (de la IA validados, o los estándar si no) y lo que se audita: proveedor,
 /// modelo, versión del prompt, duración y si se usó el respaldo con su motivo.
 /// </summary>
 public sealed record clsResultadoRedaccion(

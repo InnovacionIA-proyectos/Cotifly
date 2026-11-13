@@ -15,9 +15,9 @@ namespace Cotifly.Aplicacion.Pdf.DTOs;
 /// Diferencias con el Python:
 /// <list type="bullet">
 /// <item><c>comercial.cel</c>, <c>comercial.nombre</c> y <c>comercial.email</c> se ignoran: la firma sale de <c>UsuariosWeb</c>
-/// (nunca del LLM, HU-003.5). Solo <c>comercial.cargo</c> se toma del payload (no existe en <c>UsuariosWeb</c>).</item>
-/// <item><c>extra_css</c> y <c>dibujo_html</c> no existen: ya no hay HTML (ADR-006).</item>
-/// <item><see cref="ServiciosConexos"/> es nuevo (HU-003.5, "PDF muestra solo lo realmente incluido, itemizado").</item>
+/// (nunca del LLM). Solo <c>comercial.cargo</c> se toma del payload (no existe en <c>UsuariosWeb</c>).</item>
+/// <item><c>extra_css</c> y <c>dibujo_html</c> no existen: no hay HTML (ADR-006).</item>
+/// <item><see cref="ServiciosConexos"/> es nuevo: el PDF muestra solo lo realmente incluido, itemizado.</item>
 /// </list>
 /// </remarks>
 public sealed class clsCotizacionPdfPayload
@@ -68,15 +68,15 @@ public sealed class clsCotizacionPdfPayload
 
     /// <summary>
     /// Servicios conexos seleccionados, cada uno con su precio. Si vienen, "Estas tarifas incluyen" lista el flete
-    /// (origen y destinos) y cada servicio con su precio en vez del texto estándar. Hoy Nexo (HU-005) no entrega el costeo
-    /// desglosado por servicio: mientras tanto el agente o el formulario los envían así, o no se envían y queda el texto estándar.
+    /// (origen y destinos) y cada servicio con su precio en vez del texto estándar. Los envían el agente o el formulario;
+    /// si no se envían queda el texto estándar.
     /// </summary>
     public List<clsServicioConexoPayload>? ServiciosConexos { get; set; }
 
-    /// <summary>#173: horas de cargue de la ruta (captura); la nota general las usa en lugar de las 4 h fijas.</summary>
+    /// <summary>Horas de cargue de la ruta (captura); la nota general las usa en lugar de las 4 h fijas.</summary>
     public decimal? HorasCargue { get; set; }
 
-    /// <summary>#173: horas de descargue de la ruta (captura).</summary>
+    /// <summary>Horas de descargue de la ruta (captura).</summary>
     public decimal? HorasDescargue { get; set; }
 
     /// <summary>

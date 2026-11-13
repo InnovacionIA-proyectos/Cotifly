@@ -10,16 +10,16 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Infraestructura.Margen.Services;
 
 /// <summary>
-/// Fuente del margen de SAP TM desde la copia local (HU-042.2, #243, ADR-027): <c>dbo_cotifly.SapMargenCliente</c>, que el worker del
+/// Fuente del margen de SAP TM desde la copia local (ADR-027): <c>dbo_cotifly.SapMargenCliente</c>, que el worker del
 /// backend (<see cref="clsWorkerSincronizacionMargenSap"/>) sincroniza a diario desde <c>RentabClienteSet</c>. Cotifly no llama a SAP al
-/// cotizar; reemplaza los modos <c>export_json</c> y <c>odata</c> de #13.
+/// cotizar.
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
 /// <item><b>"No configurada".</b> Si <c>SapMargenSyncLog</c> no tiene ninguna corrida <c>ok</c>, la copia nunca se llenó (local, QA sin
 /// worker): se responde <see cref="EstadoConsultaMargenSap.NoConfigurada"/> sin leer la tabla y el resolver usa la política de la línea.</item>
 /// <item><b>Búsqueda.</b> Solo filas <c>activo = 1</c> por (organización, TrqType, BP), con organización y TrqType recortados y en
-/// mayúsculas. El BP se compara sin ceros a la izquierda en los dos lados (SAP hoy lo manda sin ceros, el catálogo de clientes puede
+/// mayúsculas. El BP se compara sin ceros a la izquierda en los dos lados (SAP lo manda sin ceros, el catálogo de clientes puede
 /// traer <c>0000000580</c>): la consulta usa el índice único <c>(salesOrgId, trqType, bpSap)</c> por sus dos primeras columnas y filtra
 /// por el final del BP; las pocas candidatas se comparan en memoria. Gana la coincidencia exacta y luego la más corta.</item>
 /// <item><b>Sin caché.</b> Dos consultas pequeñas e indexadas por resolución (la última corrida <c>ok</c> y la fila), <c>AsNoTracking</c>; el

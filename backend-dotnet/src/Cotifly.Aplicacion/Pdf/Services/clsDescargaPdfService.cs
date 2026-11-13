@@ -18,8 +18,8 @@ namespace Cotifly.Aplicacion.Pdf.Services;
 public sealed record clsArchivoPdf(string Nombre, byte[] Contenido);
 
 /// <summary>
-/// Descarga autenticada del PDF de una cotización (<c>GET /pdfs/{archivo}</c>; en el Python era público). Puede descargarlo el
-/// dueño de la cotización, el <c>director</c> (cualquier regional, HU-037.3 #211) o un <c>gerente_comercial</c> cuya regional efectiva
+/// Descarga autenticada del PDF de una cotización (<c>GET /pdfs/{archivo}</c>). Puede descargarlo el
+/// dueño de la cotización, el <c>director</c> (cualquier regional) o un <c>gerente_comercial</c> cuya regional efectiva
 /// incluye al dueño; cualquier otro caso es
 /// <see cref="clsCodigosAplicacion.NoEncontrado"/> (404, igual que si no existiera).
 /// </summary>
@@ -36,7 +36,7 @@ public interface IClsDescargaPdfService
 /// <item>Dueño: siempre.</item>
 /// <item><c>gerente_comercial</c>: solo PDF de los miembros de su regional efectiva, con la misma regla que el listado
 /// <c>GET /web/cotizaciones/regional</c> (<see cref="IClsRegionalUsuario.EsMiembroDeMiRegionalAsync"/>: <c>DimEjecutivo</c> primero,
-/// <c>UsuariosWeb.regional</c> de respaldo; HU-016.1, #154). Si el gerente no tiene regional (<c>REGIONAL_NO_ASIGNADA</c>) o la
+/// <c>UsuariosWeb.regional</c> de respaldo). Si el gerente no tiene regional (<c>REGIONAL_NO_ASIGNADA</c>) o la
 /// fuente viva está caída (<c>REGIONAL_NO_DISPONIBLE</c>), no se puede comprobar el alcance y se niega con 404 (fail-closed):
 /// solo el dueño. Cada acceso de un gerente a un PDF ajeno, y cada rechazo por dueño, queda en la auditoría
 /// (<c>descargar_pdf</c>).</item>
@@ -111,7 +111,7 @@ public sealed partial class clsDescargaPdfService(
             return (false, null);
         }
 
-        // HU-037.3 (#211): el director descarga los de cualquier regional; el gerente, los de su regional (IClsRegionalUsuario).
+        // El director descarga los de cualquier regional; el gerente, los de su regional (IClsRegionalUsuario).
         var miembro = await regionales.PuedeVerDeAsync(gerente, rol, duenoId, cancellationToken);
         return miembro.EsFallo ? (false, miembro.Error.Codigo) : (miembro.Valor, null);
     }

@@ -5,14 +5,14 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Infraestructura.Margen.Services;
 
 /// <summary>
-/// Avisos al arrancar sobre SAP TM (HU-042.2, #243, ADR-027). Las variables de los modos <c>export_json</c>/<c>odata</c> de #13 que no volvieron
-/// (<c>SapTm__Modo</c> y <c>SapTm__ExportPath</c>) ya no se leen: un <c>.env</c> viejo que todavía las traiga NO impide arrancar, se registra un
+/// Avisos al arrancar sobre SAP TM (ADR-027). Las variables retiradas de la sección <c>SapTm</c>
+/// (<c>SapTm__Modo</c> y <c>SapTm__ExportPath</c>) no se leen: un <c>.env</c> que todavía las traiga NO impide arrancar, se registra un
 /// warning por variable ("variable obsoleta, se ignora") con su nombre, nunca su valor. <c>SapTm__Url</c>, <c>User</c>, <c>Pass</c> y
-/// <c>SapClient</c> volvieron con la sincronización que hace el backend (<see cref="clsWorkerSincronizacionMargenSap"/>).
+/// <c>SapClient</c> los usa la sincronización que hace el backend (<see cref="clsWorkerSincronizacionMargenSap"/>).
 /// </summary>
 public sealed class clsAvisosArranqueSapTm(IReadOnlyList<string> obsoletas, ILogger<clsAvisosArranqueSapTm> logger) : IHostedService
 {
-    /// <summary>Claves retiradas de la sección <c>SapTm</c> (las de los modos <c>export_json</c>/<c>odata</c> de #13 que no volvieron).</summary>
+    /// <summary>Claves retiradas de la sección <c>SapTm</c> (las de los modos <c>export_json</c>/<c>odata</c>).</summary>
     public static readonly IReadOnlyList<string> ClavesRetiradas = ["Modo", "ExportPath"];
 
     /// <summary>

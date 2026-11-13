@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace Cotifly.Aplicacion.Mercancias.Services;
 
 /// <summary>
-/// Análisis del Excel de mercancías de una ruta (HU-035.1, #202, ADR-024): valida el archivo con las reglas genéricas
+/// Análisis del Excel de mercancías de una ruta (ADR-024): valida el archivo con las reglas genéricas
 /// (<see cref="clsArchivoExcel"/>), lo lee localmente como grilla cruda (<see cref="IClsLectorGrillaExcel"/>) y, si alguna hoja tiene
 /// columna de mercancía o de código, sugiere el código de cada fila contra el catálogo del cubicador. <b>Nunca llama a Nexo</b> y no
 /// guarda nada. El catálogo es opcional: sin cubicador o con él caído, el análisis sale igual, sin sugerencias.
@@ -44,7 +44,7 @@ public sealed class clsAnalisisExcelMercanciasService(
     }
 
     /// <summary>
-    /// Igual que el análisis de licitaciones (HU-023.5): por hoja, la columna de la mercancía y la de su código y, por fila, el código
+    /// Igual que el análisis de licitaciones: por hoja, la columna de la mercancía y la de su código y, por fila, el código
     /// tal cual o el más parecido del catálogo (solo tipos cubicables), marcado como sugerido. El catálogo se lee una vez y solo si alguna
     /// hoja tiene una de esas columnas.
     /// </summary>

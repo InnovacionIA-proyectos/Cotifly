@@ -4,10 +4,10 @@ using Cotifly.Dominio.Cotizaciones;
 namespace Cotifly.Aplicacion.Costeo.Services;
 
 /// <summary>
-/// Aplica una foto del costeo de Nexo a la cotización con la regla del polling (HU-005.6 y HU-005.7): deriva <c>estado_costeo</c>,
+/// Aplica una foto del costeo de Nexo a la cotización con la regla del polling: deriva <c>estado_costeo</c>,
 /// guarda el id de la cotización de Nexo, reprograma la agenda (o la detiene si el estado es terminal) y pone el precio con el margen
-/// guardado, camión por camión y ruta por ruta (ADR-017, HU-021). La usan el polling, el envío cuando Nexo ya costeó en la misma petición y el resultado
-/// ganada/perdida cuando el costeo aún no estaba aplicado (HU-013.14, ADR-018 §17): las tres lecturas dan el mismo resultado.
+/// guardado, camión por camión y ruta por ruta (ADR-017). La usan el polling, el envío cuando Nexo ya costeó en la misma petición y el resultado
+/// ganada/perdida cuando el costeo aún no estaba aplicado (ADR-018 §17): las tres lecturas dan el mismo resultado.
 /// </summary>
 public static class clsLecturaCosteo
 {
@@ -28,14 +28,14 @@ public static class clsLecturaCosteo
         ArgumentNullException.ThrowIfNull(opciones);
         ArgumentNullException.ThrowIfNull(precioCosteo);
 
-        // HU-021: primero los camiones (estado, flete y retorno), después la solicitud resume a sus rutas (§9.2) y por último el precio.
+        // Primero los camiones (estado, flete y retorno), después la solicitud resume a sus rutas (§9.2) y por último el precio.
         var cambio = precioCosteo.ActualizarCamiones(cotizacion, foto, ahora);
 
-        // Conexos que Nexo agregó y Cotifly no pudo leer en su momento (HU-013.15): solo los nuevos del registro de pendientes (#135), cada
-        // uno a su ruta (la del camión cuya línea los lleva, #134; si no se sabe, la ruta pedida) y se quita la marca. Fuera de esa marca el
-        // polling no importa conexos (decisión 3).
+        // Conexos que Nexo agregó y Cotifly no pudo leer en su momento: solo los nuevos del registro de pendientes, cada
+        // uno a su ruta (la del camión cuya línea los lleva; si no se sabe, la ruta pedida) y se quita la marca. Fuera de esa marca el
+        // polling no importa conexos.
         var importarConexos = cotizacion.ConexosPendientesDeLeer;
-        // HU-036.4 (#208): con el precio congelado (PDF o finalizada) los conexos de Nexo tampoco entran (cambiarían el precio).
+        // Con el precio congelado (PDF o finalizada) los conexos de Nexo tampoco entran (cambiarían el precio).
         if (importarConexos && !cotizacion.PrecioCongelado && foto.Cotizacion is { } nexo)
         {
             var nuevos = ConexosNuevos(cotizacion, nexo, pendientes);
@@ -46,7 +46,7 @@ public static class clsLecturaCosteo
             }
         }
 
-        // HU-043.2 (#251): la venta que Nexo fijó para los conexos ya guardados (los anteriores al despliegue quedaron al costo). Sin precio
+        // La venta que Nexo fijó para los conexos ya guardados (los que quedaron al costo la toman aquí). Sin precio
         // congelado; la recalcula AplicarPrecio más abajo.
         if (!cotizacion.PrecioCongelado && foto.Cotizacion is { } leida)
         {
@@ -54,7 +54,7 @@ public static class clsLecturaCosteo
         }
 
         var estadoNexo = clsDerivacionEstadoCosteo.Derivar(foto);
-        // HU-028.1 (#183): con todas las rutas rechazadas la cabecera toma lo que dice Nexo (entregada) o sigue en pendiente_costeo.
+        // Con todas las rutas rechazadas la cabecera toma lo que dice Nexo (entregada) o sigue en pendiente_costeo.
         var estado = cotizacion.EstadoCabecera(estadoNexo);
         var siguiente = clsDerivacionEstadoCosteo.EsTerminal(estado)
             ? null
@@ -69,7 +69,7 @@ public static class clsLecturaCosteo
 
         cambio = precioCosteo.AplicarPrecio(cotizacion, foto, ahora) | cambio;
 
-        // HU-028.1 (#183): todas las rutas rechazadas por la Mesa: el motivo queda visible en "Mis cotizaciones" (y se quita si se deshace).
+        // Todas las rutas rechazadas por la Mesa: el motivo queda visible en "Mis cotizaciones" (y se quita si se deshace).
         cambio = cotizacion.AvisarRutasRechazadas() | cambio;
 
         // Una entregada que se leyó y sigue sin precio (p. ej. Nexo no trajo la cotización) queda con motivo: así no parece "sin leer" y
@@ -84,7 +84,7 @@ public static class clsLecturaCosteo
     }
 
     /// <summary>
-    /// Los conexos de la cotización de Nexo que se importan con la marca de pendientes (HU-021.8, #135): solo los que NO estaban en Nexo
+    /// Los conexos de la cotización de Nexo que se importan con la marca de pendientes: solo los que NO estaban en Nexo
     /// antes del POST incierto (<see cref="clsConexosPendientesNexo.Previos"/>) ni están ya en alguna ruta, y van a la ruta pedida. Un
     /// conexo que el comercial quitó en Cotifly sigue en Nexo (no hay DELETE) pero estaba en los previos: no vuelve. Sin el registro de
     /// pendientes (o si la ruta ya no existe) no se importa nada.
@@ -103,16 +103,16 @@ public static class clsLecturaCosteo
         var conocidos = pendientes!.Previos
             .Concat(cotizacion.Rutas.SelectMany(r => r.Conexos).Select(c => c.IdServicioConexo))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        // Decisión 10 (HU-021.9): un conexo que Cotifly envió por su cuenta tiene en Nexo otro id de fila, pero su servicioConexoId es el
+        // Un conexo que Cotifly envió por su cuenta tiene en Nexo otro id de fila, pero su servicioConexoId es el
         // id que ya está en la ruta: tampoco se importa (no se duplica).
         return (ruta, [.. nexo.Conexos.Where(c => !conocidos.Contains(c.Id) && (c.ServicioConexoId is null || !conocidos.Contains(c.ServicioConexoId)))]);
     }
 
     /// <summary>
-    /// #181: la situación que Nexo informa de la línea de cada camión vigente ya asociado (<c>estadoLinea</c>, <c>motivoPendiente</c> y, #183,
+    /// La situación que Nexo informa de la línea de cada camión vigente ya asociado (<c>estadoLinea</c>, <c>motivoPendiente</c> y
     /// <c>motivoRechazo</c> de
     /// <see cref="clsCosteoConsultadoNexo.Detalle"/>), por id de camión. Se llama después de <see cref="AplicarFoto"/> (que asocia los
-    /// camiones); no toca la cotización ni el emparejamiento. Los camiones sin línea de Nexo, o cuya línea no trae nada (Nexo sin #309), no
+    /// camiones); no toca la cotización ni el emparejamiento. Los camiones sin línea de Nexo, o cuya línea no trae nada, no
     /// salen.
     /// </summary>
     public static IReadOnlyDictionary<Guid, clsSituacionLineaNexo> SituacionesPorCamion(clsCotizacionSolicitud cotizacion, clsCosteoConsultadoNexo foto)

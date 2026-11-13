@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Infraestructura.Identidad.Persistence;
 
 /// <summary>
-/// Contexto de SOLO LECTURA sobre la base de identidad del portal (ADR-008, ADR-009 §identidad compartida con Nexo, #172):
+/// Contexto de SOLO LECTURA sobre la base de identidad del portal (ADR-008, ADR-009 §identidad compartida con Nexo):
 /// la misma que lee Nexo en cada ambiente (QA: <c>dbSolucionesTI_Prueba</c>; el nombre va solo en <c>ConnectionStrings:Identidad</c>): usuarios corporativos (<c>tblSAPUsuariosApp</c>), sus
 /// roles (<c>tblSAPUsuarioRoles</c>) y el catálogo de roles de ClientePro (<c>tblSAPRoles</c>) para la verificación doble
 /// del login (ADR-009). Sin tracking y <c>SaveChanges</c> lanza <see cref="InvalidOperationException"/>. La garantía real
@@ -14,12 +14,12 @@ namespace Cotifly.Infraestructura.Identidad.Persistence;
 /// Las filas son tipos internos: fuera de Infraestructura se expone el puerto <c>IClsAlmacenIdentidadExterno</c>.
 /// </summary>
 /// <remarks>
-/// Tipos reales, los mismos que Nexo verificó contra <c>sys.columns</c> de <c>dbSolucionesTI_Prueba</c> (2026-09-01,
-/// <c>IdentidadPortalDbContext</c>): <c>tblSAPUsuariosApp.ID</c> es <c>numeric(18,0)</c> (se lee como <see cref="decimal"/> y el
+/// Tipos reales, los mismos que Nexo verificó contra <c>sys.columns</c> de <c>dbSolucionesTI_Prueba</c>
+/// (<c>IdentidadPortalDbContext</c>): <c>tblSAPUsuariosApp.ID</c> es <c>numeric(18,0)</c> (se lee como <see cref="decimal"/> y el
 /// almacén lo convierte a <see cref="long"/>), mientras que <c>tblSAPUsuarioRoles.IDUSUARIO</c> e <c>IDROLES</c> y
 /// <c>tblSAPRoles.IDROLES</c> son <c>int</c>. <c>tblSAPUsuarioRoles</c> se mapea con la clave compuesta (<c>IDUSUARIO</c>,
-/// <c>IDROLES</c>), igual que en Nexo: Cotifly no lee ninguna columna <c>ID</c> de esa tabla, así que funciona tenga o no tenga una
-/// (#172). Los textos se mapean como VARCHAR sin Unicode para que los parámetros sean VARCHAR (sin conversión implícita que impida
+/// <c>IDROLES</c>), igual que en Nexo: Cotifly no lee ninguna columna <c>ID</c> de esa tabla, así que funciona tenga o no tenga una.
+/// Los textos se mapean como VARCHAR sin Unicode para que los parámetros sean VARCHAR (sin conversión implícita que impida
 /// usar índices); si la columna real fuera NVARCHAR, SQL Server convierte el parámetro y la lectura no cambia.
 /// </remarks>
 public sealed class clsIdentidadDbContext : DbContext
@@ -85,7 +85,7 @@ public sealed class clsIdentidadDbContext : DbContext
         modelBuilder.Entity<clsFilaUsuarioRolSap>(e =>
         {
             e.ToTable(TablaUsuarioRoles, Esquema);
-            // Clave compuesta (como Nexo): la columna ID de tblSAPUsuarioRoles no se mapea ni se lee (#172).
+            // Clave compuesta (como Nexo): la columna ID de tblSAPUsuarioRoles no se mapea ni se lee.
             e.HasKey(r => new { r.IdUsuario, r.IdRoles });
             e.Property(r => r.IdUsuario).HasColumnName("IDUSUARIO").HasColumnType("int");
             e.Property(r => r.IdRoles).HasColumnName("IDROLES").HasColumnType("int");

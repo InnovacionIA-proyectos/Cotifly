@@ -11,7 +11,7 @@ namespace Cotifly.Aplicacion.Margen.DTOs;
 /// <param name="MargenPolitica">Margen de la política de la línea (referencia de un ajuste negociado), o <c>null</c> sin política.</param>
 /// <param name="MetodoCalculo">Método de cálculo de la línea (<c>margen</c> por defecto).</param>
 /// <param name="SincronizacionVieja">
-/// HU-042.2 (#243): la copia de SAP TM consultada tiene la última corrida <c>ok</c> más vieja que <c>SapTm:AvisoSincronizacionHoras</c>
+/// La copia de SAP TM consultada tiene la última corrida <c>ok</c> más vieja que <c>SapTm:AvisoSincronizacionHoras</c>
 /// (con margen de SAP o sin registro para el cliente: el dato puede faltar porque la copia está vieja); <c>null</c> si no.
 /// </param>
 public sealed record clsMargenResuelto(

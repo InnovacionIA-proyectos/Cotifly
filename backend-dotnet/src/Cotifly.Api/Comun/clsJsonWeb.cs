@@ -7,8 +7,8 @@ using Microsoft.Extensions.Options;
 namespace Cotifly.Api.Comun;
 
 /// <summary>
-/// Marca un controller (o acción) cuyo JSON de entrada y de salida va en snake_case: todo <c>/web/*</c> (contrato #17,
-/// ADR-002). Lo leen <see cref="clsFormateadorSalidaWeb"/> y <see cref="clsFormateadorEntradaWeb"/> desde los metadatos del
+/// Marca un controller (o acción) cuyo JSON de entrada y de salida va en snake_case: todo <c>/web/*</c> (ADR-002).
+/// Lo leen <see cref="clsFormateadorSalidaWeb"/> y <see cref="clsFormateadorEntradaWeb"/> desde los metadatos del
 /// endpoint; <c>/api/auth/*</c> y <c>/health</c> no lo llevan y siguen con la serialización por defecto de MVC.
 /// Se hereda: basta con ponerlo en <see cref="clsControladorWebBase"/>.
 /// </summary>
@@ -18,7 +18,7 @@ public sealed class clsJsonSnakeCaseAttribute : Attribute
 }
 
 /// <summary>
-/// Convención JSON por grupo de endpoints (#12, ADR-002). MVC tiene formateadores globales; aquí se agrega un par de
+/// Convención JSON por grupo de endpoints (ADR-002). MVC tiene formateadores globales; aquí se agrega un par de
 /// formateadores System.Text.Json con snake_case al principio de la lista, y cada uno solo acepta la petición si el endpoint
 /// tiene <see cref="clsJsonSnakeCaseAttribute"/>. Si no, MVC sigue con los formateadores por defecto (camelCase o los nombres
 /// explícitos de <c>JsonPropertyName</c>, como en <c>/api/auth/*</c>).
