@@ -49,7 +49,6 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 | #16 | HU-003.10 | Validador de la respuesta final del agente |
 | #14 | HU-003.8 | Integración continua, scripts de ejecución local, cobertura, documentación técnica y casos de regresión manual (este conjunto de documentos) |
 | #20 (PR #65) | HU-005.2, HU-005.3, HU-005.4, HU-005.13 | Fuera del milestone HU-003: integración con Nexo (`GET /web/clientes?q=` y `buscar_cliente`, `GET /web/municipios`, `GET /web/catalogos-flete`, `POST /web/cubicacion`) |
-| #15 | HU-003.9 | Paridad funcional Python vs .NET: **cerrada por decisión del usuario (2026-10-13, HU-022.1): el Python se retiró del repositorio (tag `python-final`), así que ya no hay contra qué comparar** (plantilla histórica en [qa/paridad-python-dotnet.md](../../docs/archivo/paridad-python-dotnet.md)) |
 
 ## 1.5 Fuera del alcance actual
 
@@ -59,7 +58,7 @@ El rol se obtiene del almacén corporativo de ClientePro (`dbsolucionesti`) en c
 | Grovity (ClientePro) desde el agente | Propuesta sin aprobar en ADR-005 y sin objeto desde HU-013.9 (el agente que la usaría se retiró); el alta de prospectos del formulario no la necesita (la resuelve `clientepro-frontend`, corrección del 2026-09-27) |
 | Regional del comercial desde `DWCubosEBSSAP` | Adaptador listo tras `ConnectionStrings__Regional` (ADR-016); falta que el DBA confirme la tabla y dé acceso. Mientras tanto la fija el DBA en `UsuariosWeb.regional`; sin ella el tablero del gerente responde 409 `REGIONAL_NO_ASIGNADA` |
 | Score de urgencia y deadline vencido (Nexo) en el tablero | Pendiente del contrato de Nexo (ADR-016 §8) |
-| Sincronización a Google Sheets y PDF en S3/MinIO | Diferidas, [ADR-012](../specs/decisiones/ADR-012-integraciones-diferidas-sheets-y-s3.md) |
+| PDF en S3 | Solo si el despliegue pasa a varias réplicas sin volumen compartido, [ADR-012](../specs/decisiones/ADR-012-integraciones-diferidas-sheets-y-s3.md) |
 | Despliegue en Docker Swarm con Dokploy | HU-006 |
 | Frontend Angular | HU-004 (`clientepro-frontend`) |
 

@@ -1,6 +1,6 @@
 # ADR-012 — Integraciones diferidas: Google Sheets y almacenamiento S3
 
-- **Estado:** Pendiente (decide Duban con Gerencia Comercial e infraestructura; ver Pendientes)
+- **Estado:** Aceptada. Las tres decisiones están implementadas: sin tarifario de Drive, sin sincronización a Google Sheets (el tablero es el de métricas de Cotifly, alternativa C) y PDF en el volumen detrás de `IClsAlmacenPdf` con una réplica (ver «Resolución»).
 - **Fecha:** 2026-09-24
 - **Issue / HU:** #13 (HU-003.7). Relacionada con ADR-001 (corte único), ADR-007 (volumen `/data/pdfs`), #11 (HU-003.5, `IClsAlmacenPdf`), HU-006.6 (#30, réplicas y manifiestos), HU-007 (variables) y HU-010 (tablero de métricas).
 
@@ -17,7 +17,7 @@ El Python tiene cuatro integraciones externas. HU-003.7 pide portar las que sigu
 
 HU-003.7 pide confirmar con el equipo si Sheets y S3 siguen vigentes antes de migrarlos. Esa confirmación no existe todavía y ninguna de las dos es necesaria para cotizar.
 
-## Decisión (provisional)
+## Decisión
 
 1. **Google Drive (tarifario): no se porta.** Decisión cerrada el 2026-09-23. Tampoco se agregan `GOOGLE_SA_JSON`, `DRIVE_TARIFARIO_*` ni `TARIFA_*` a `.env.example`.
 2. **Google Sheets: no se implementa en #13.** No se crea puerto, adaptador, `BackgroundService` ni endpoint `/internal/sync-sheets` hasta que se decida el destino del tablero (ver alternativas). Mientras tanto, el tablero de Looker Studio del Python deja de actualizarse cuando se apague el Python (ADR-001).
@@ -60,11 +60,18 @@ HU-003.7 pide confirmar con el equipo si Sheets y S3 siguen vigentes antes de mi
 | `PDF_STORAGE_MODO=s3`, `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, `S3_SECURE` | eliminadas | Solo volumen (`Pdf__StorageDir`, #11) |
 | `INTERNAL_API_TOKEN` | eliminada | Solo la usaban `sheets_api` (`/internal/sync-sheets`) y `sesiones_api` (`/sesiones/...`), que no se portan (ADR-001) |
 
+## Resolución
+
+- **Tablero:** se aplica la alternativa C. Las métricas por comercial y por regional se sirven en la consola de ClientePro
+  (`GET /web/metricas/comercial` y `GET /web/metricas/regional`, ADR-016). El backend no tiene código, secretos ni procesos de Google
+  Sheets.
+- **PDF:** el único adaptador es el volumen (`clsAlmacenPdfVolumen`, `/data/pdfs`), y los manifiestos despliegan una réplica. Un
+  adaptador S3 solo se agrega si el despliegue pasa a varias réplicas sin volumen compartido; sería una ADR nueva.
+- **SAP TM:** las fuentes de exportación JSON y OData en vivo de la tabla de contexto se retiraron; el margen sale de la copia local
+  (ADR-027).
+
 ## Pendientes
 
 | Pendiente | Dueño |
 |---|---|
-| Confirmar si Gerencia sigue usando el tablero de Looker Studio y elegir A, B o C | Duban + Gerencia Comercial |
-| Si A: confirmar si Google puede llegar a `tbsdatacenter` y crear el login de solo lectura | DBA / infraestructura |
-| Definir número de réplicas y tipo de volumen en Swarm/Dokploy; de eso depende volumen o S3 (HU-006.6 propone 1 réplica y volumen local, ADR-013 §3) | Duban + infraestructura (HU-006.6, #30) |
-| Si S3: bucket, credenciales y política de retención de los PDF | Infraestructura |
+| Ninguno. Si el despliegue pasa a varias réplicas sin volumen compartido, el almacenamiento S3 (bucket, credenciales y retención) se decide en una ADR nueva | Duban + infraestructura |
