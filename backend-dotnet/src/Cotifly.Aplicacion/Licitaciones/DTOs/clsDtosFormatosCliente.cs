@@ -11,10 +11,17 @@ namespace Cotifly.Aplicacion.Licitaciones.DTOs;
 public sealed record clsEntradaGuardarReceta(clsArchivoSubido Archivo, string? Receta, string? NitCliente, string? Nombre, string? Instrucciones);
 
 /// <summary>
-/// <c>GET /web/diccionario-cliente</c>: los términos que se pueden mostrar (hoy, solo los generales) y, si se pidió con NIT, el aviso de que
-/// los del cliente todavía no están disponibles.
+/// <c>GET /web/diccionario-cliente</c>: los términos que se pueden mostrar (con NIT, los del cliente y los generales; sin NIT, solo los
+/// generales).
 /// </summary>
-public sealed record clsConsultaDiccionarioCliente(IReadOnlyList<clsTerminoCliente> Terminos, clsAvisoDiccionario? Aviso);
+public sealed record clsConsultaDiccionarioCliente(IReadOnlyList<clsTerminoCliente> Terminos);
 
-/// <summary>Aviso de la consulta del diccionario: un código estable para la interfaz y el mensaje para el comercial.</summary>
+/// <summary>Aviso de la consulta del diccionario (reservado en el contrato: hoy la respuesta lo trae siempre en <c>null</c>).</summary>
 public sealed record clsAvisoDiccionario(string Codigo, string Mensaje);
+
+/// <summary>
+/// <c>POST</c> y <c>PUT /web/diccionario-cliente</c>: el NIT del cliente (obligatorio) y los campos del término tal como llegan; el caso de
+/// uso los valida antes de NEXO. <paramref name="Activo"/> ausente = <c>true</c>.
+/// </summary>
+public sealed record clsEntradaTerminoCliente(
+    string? NitCliente, string? Termino, string? Tipo, string? Concepto, string? Contexto, string? Ejemplo, bool? Activo);

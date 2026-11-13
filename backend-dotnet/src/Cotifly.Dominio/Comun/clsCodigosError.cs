@@ -553,4 +553,37 @@ public static class clsCodigosError
     /// para no culpar al archivo con un <c>ARCHIVO_DEMASIADO_GRANDE</c>. 400. Código nuevo del backend .NET.
     /// </summary>
     public const string LecturaDemasiadoGrande = "LECTURA_DEMASIADO_GRANDE";
+
+    /// <summary>Término del diccionario del cliente sin <c>termino</c>. 400. Mismo código que usa NEXO.</summary>
+    public const string TerminoRequerido = "TERMINO_REQUERIDO";
+
+    /// <summary>Término del diccionario del cliente sin <c>concepto</c>. 400. Mismo código que usa NEXO.</summary>
+    public const string ConceptoRequerido = "CONCEPTO_REQUERIDO";
+
+    /// <summary>El <c>concepto</c> de un término de tipo <c>columna</c> no es un campo de NEXO. 400. Mismo código que usa NEXO.</summary>
+    public const string CampoDestinoInvalido = "CAMPO_DESTINO_INVALIDO";
+
+    /// <summary>El <c>concepto</c> de un término de tipo <c>unidad</c> no es una unidad canónica (<c>kg</c> o <c>t</c>). 400. Mismo código que usa NEXO.</summary>
+    public const string UnidadInvalida = "UNIDAD_INVALIDA";
+
+    /// <summary>Un término de tipo <c>valor</c> sin <c>contexto</c> o con uno que NEXO no conoce. 400. Mismo código que usa NEXO.</summary>
+    public const string ContextoInvalido = "CONTEXTO_INVALIDO";
+
+    /// <summary>Un término de tipo <c>columna</c> o <c>unidad</c> con <c>contexto</c>. 400. Mismo código que usa NEXO.</summary>
+    public const string ContextoNoAplica = "CONTEXTO_NO_APLICA";
+
+    /// <summary>El <c>ejemplo</c> del término pasa del largo que acepta NEXO. 400. Mismo código que usa NEXO.</summary>
+    public const string EjemploMuyLargo = "EJEMPLO_MUY_LARGO";
+
+    /// <summary>El cliente ya tiene ese término con el mismo tipo y contexto. 409. Mismo código que usa NEXO.</summary>
+    public const string TerminoDuplicado = "TERMINO_DUPLICADO";
+
+    /// <summary>El término no existe o no es del cliente indicado. 404. Mismo código que usa NEXO.</summary>
+    public const string TerminoNoEncontrado = "TERMINO_NO_ENCONTRADO";
+
+    /// <summary>
+    /// Se intentó editar o borrar un término general (aplica a todos los clientes): desde Cotifly solo se mantienen los términos del
+    /// cliente. 403. Código del backend .NET.
+    /// </summary>
+    public const string TerminoGeneralNoEditable = "TERMINO_GENERAL_NO_EDITABLE";
 }

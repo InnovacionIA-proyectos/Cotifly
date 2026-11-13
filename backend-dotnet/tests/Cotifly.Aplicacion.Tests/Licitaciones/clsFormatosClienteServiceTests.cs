@@ -12,7 +12,7 @@ namespace Cotifly.Aplicacion.Tests.Licitaciones;
 /// <summary>
 /// HU-044.5 (#256): plantillas de mapeo, recetas de lectura y diccionario del cliente son un puente hacia NEXO. Los listados exigen el NIT
 /// (sin él NEXO devolvería los de todos los clientes) y no llaman a NEXO sin él; el PUT de la receta solo valida el archivo (sin abrirlo) y
-/// que venga la receta; el diccionario solo devuelve los términos generales mientras NEXO no filtre por cliente.
+/// que venga la receta; el diccionario devuelve, con NIT, los términos del cliente y los generales.
 /// </summary>
 public sealed class clsFormatosClienteServiceTests
 {
@@ -21,6 +21,14 @@ public sealed class clsFormatosClienteServiceTests
     private readonly IClsImportacionExcelNexo _nexo = Substitute.For<IClsImportacionExcelNexo>();
 
     private readonly clsLoggerFalso<clsFormatosClienteService> _logger = new();
+
+    public clsFormatosClienteServiceTests()
+    {
+        // La consulta de control de un NEXO que filtra por NIT no trae términos de cliente.
+        _nexo.ObtenerDiccionarioClienteAsync(Arg.Any<Guid>(), clsFormatosClienteService.NitDeControl, Arg.Any<clsFiltroDiccionarioCliente?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyList<clsTerminoCliente>>.Exito([]));
+    }
 
     private clsFormatosClienteService Servicio() => new(_nexo, _logger);
 
@@ -131,21 +139,45 @@ public sealed class clsFormatosClienteServiceTests
         var resultado = await Servicio().ConsultarDiccionarioAsync(_usuario, null, null, null, Ct);
 
         resultado.Valor.Terminos.Select(t => t.Termino).Should().Equal("Tractomula");
-        resultado.Valor.Aviso.Should().BeNull();
     }
 
     [Fact]
-    public async Task ElDiccionarioConNitDevuelveSoloLosGeneralesYUnAvisoPorqueNexoNoFiltraPorCliente()
+    public async Task ElDiccionarioConNitDevuelveLosTerminosDelClienteYLosGenerales()
     {
         _nexo.ObtenerDiccionarioClienteAsync(_usuario, Nit, Arg.Any<clsFiltroDiccionarioCliente?>(), Arg.Any<CancellationToken>())
-            .Returns(clsResultado<IReadOnlyList<clsTerminoCliente>>.Exito([Termino("Tractomula", null), Termino("Mula de otro cliente", Guid.NewGuid())]));
+            .Returns(clsResultado<IReadOnlyList<clsTerminoCliente>>.Exito([Termino("Tractomula", null), Termino("Mula del cliente", Guid.NewGuid())]));
 
         var resultado = await Servicio().ConsultarDiccionarioAsync(_usuario, Nit, "valor", "mula", Ct);
 
-        resultado.Valor.Terminos.Select(t => t.Termino).Should().Equal("Tractomula");
-        resultado.Valor.Aviso!.Codigo.Should().Be(clsFormatosClienteService.AvisoTerminosClienteNoDisponibles);
+        resultado.Valor.Terminos.Select(t => t.Termino).Should().Equal("Tractomula", "Mula del cliente");
         await _nexo.Received(1).ObtenerDiccionarioClienteAsync(_usuario, Nit,
             Arg.Is<clsFiltroDiccionarioCliente?>(f => f!.Tipo == "valor" && f.Q == "mula" && f.IncluirGenerales), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SiNexoNoFiltroPorElNitSoloSalenLosGeneralesYQuedaUnAviso()
+    {
+        // Términos de dos clientes al pedir uno: NEXO no filtró y no se puede saber cuál es el del NIT.
+        _nexo.ObtenerDiccionarioClienteAsync(_usuario, Nit, Arg.Any<clsFiltroDiccionarioCliente?>(), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyList<clsTerminoCliente>>.Exito([
+                Termino("Tractomula", null), Termino("Mula de uno", Guid.NewGuid()), Termino("Mula de otro", Guid.NewGuid())]));
+
+        var resultado = await Servicio().ConsultarDiccionarioAsync(_usuario, Nit, null, null, Ct);
+
+        resultado.Valor.Terminos.Select(t => t.Termino).Should().Equal("Tractomula");
+        _logger.Registros.Should().ContainSingle(r => r.Nivel == LogLevel.Warning).Which.Mensaje.Should().NotContain("900555111");
+    }
+
+    [Fact]
+    public async Task ConNitUnTerminoSinClienteIdLeidoTampocoSale()
+    {
+        _nexo.ObtenerDiccionarioClienteAsync(_usuario, Nit, Arg.Any<clsFiltroDiccionarioCliente?>(), Arg.Any<CancellationToken>())
+            .Returns(clsResultado<IReadOnlyList<clsTerminoCliente>>.Exito([
+                Termino("Tractomula", null), Termino("Sin clienteId", null, clienteIdLeido: false), Termino("Del cliente", Guid.NewGuid())]));
+
+        var resultado = await Servicio().ConsultarDiccionarioAsync(_usuario, Nit, null, null, Ct);
+
+        resultado.Valor.Terminos.Select(t => t.Termino).Should().Equal("Tractomula", "Del cliente");
     }
 
     [Fact]

@@ -80,7 +80,7 @@ Los pliegos de licitación son justo esos archivos. La pregunta era si Cotifly r
     validada al arrancar con los tiempos. Apagada o sin `Nexo:UrlBase`, se registra `clsImportacionExcelNoDisponible`, que responde
     `NEXO_NO_DISPONIBLE` sin llamar a NEXO.
 12. **Alcance de HU-044.1.** Solo el puerto, el adaptador, la simulación en `clsNexoFalso` y este ADR. Del diccionario, solo la lectura
-    (`GET diccionario-cliente` y `/opciones`); la escritura (`POST/PUT/DELETE`, `CONTRATO.md` §3.19.1 de NEXO) se agrega en #256. Los endpoints `/web/licitaciones/...`
+    (`GET diccionario-cliente` y `/opciones`); la escritura (`POST/PUT/DELETE`, `CONTRATO.md` §3.19.1 de NEXO) llegó con #256. Los endpoints `/web/licitaciones/...`
     son #253 a #256 y las pruebas E2E, #257.
 
 ## Consecuencias
@@ -90,20 +90,43 @@ Los pliegos de licitación son justo esos archivos. La pregunta era si Cotifly r
   tampoco toca a Cotifly.
 - El gasto de IA queda en NEXO y se mide por comercial con su identidad del portal.
 - Las plantillas, recetas y términos que un comercial confirma desde Cotifly los ve el portal de NEXO y al revés (es el mismo cliente local).
-- **Discrepancia abierta con NEXO QA (2026-11-06):** `GET /api/diccionario-cliente` todavía no acepta `clienteNit` (NEXO#410 cubrió el mapeo
-  y las plantillas, no el diccionario): ignora el parámetro y responde los términos de todos los clientes más los generales. Cotifly lo
-  manda igual para que tome efecto cuando NEXO lo agregue; mientras tanto, el endpoint que lo exponga (#253 a #256) debe saberlo.
-  - **Cómo lo resuelve #256 (HU-044.5, 2026-11-06, pendiente de decisión).** `GET /web/diccionario-cliente` descarta todo término con
-    cliente (`clienteId != null`) y devuelve solo los generales, con o sin NIT; con NIT añade el aviso `TERMINOS_CLIENTE_NO_DISPONIBLES`
-    para que la interfaz explique que los del cliente aún no se ven. Es la opción conservadora (b) del análisis: nunca sale un término de
-    otro cliente. Las otras opciones eran (a) resolver el `clienteId` de NEXO por NIT solo para filtrar, que choca con el punto 3, y (c)
-    esperar a NEXO. Cuando NEXO filtre por `clienteNit`, se revisa la regla y se quita el aviso.
-    El filtro **falla cerrado**: un término es general solo si NEXO mandó `clienteId: null` explícito y sin `clienteNombre`. Si
-    `clienteId` no viene (un cambio de forma de NEXO), el adaptador lo marca como no leído (`ClienteIdLeido = false`) y el término no se
-    muestra. Lo más seguro sería un campo `general` explícito de NEXO: se le puede pedir junto con el filtro.
-  - **La escritura del diccionario no está.** `POST`, `PUT /{id}` y `DELETE /{id}` de `/web/diccionario-cliente` (y sus códigos
-    `TERMINO_DUPLICADO`, `TERMINO_NO_ENCONTRADO`, `CAMPO_DESTINO_INVALIDO` y `CONTEXTO_INVALIDO`) esperan el contrato §3.19.1 de NEXO y
-    S6-HU-34.10. El puerto `IClsImportacionExcelNexo` tampoco tiene esas operaciones todavía.
+- **Diccionario por NIT (resuelto el 2026-11-10).** Desde el 2026-11-06 NEXO QA filtra `GET /api/diccionario-cliente` por
+  `clienteNit` (términos del cliente más los generales) y tiene `POST`, `PUT /{id}` y `DELETE /{id}` con el rol Comercial. La regla
+  provisional de #256 (solo generales más el aviso `TERMINOS_CLIENTE_NO_DISPONIBLES`) se retira; el contrato quedó fijado en el
+  comentario de la issue del 2026-11-10:
+  - `GET /web/diccionario-cliente` con NIT muestra los términos del cliente (`general = false`) y los generales; sin NIT, solo los
+    generales (sin NIT NEXO devuelve los de todos los clientes). `aviso` va siempre en `null`.
+  - **Defensa en Cotifly, falla cerrado.** `TerminoClienteDto` trae `clienteId` y `clienteNombre`, pero no el NIT, y NEXO no tiene
+    una consulta que resuelva siempre el `clienteId` de un NIT (`GET /clientes` lo trae en `null` con el DW). Por eso la pertenencia
+    se demuestra por el comportamiento de NEXO en la misma operación, y un término de cliente solo sale (o se edita o borra) si:
+    1. la respuesta trae términos de un solo cliente, y
+    2. una consulta de control (`clienteNit = COTIFLYSINCLIENTE`, `incluirGenerales = false`) vuelve sin términos de cliente. Un NEXO
+       que ignora `clienteNit` responde ahí los mismos términos ajenos que al comercial y queda delatado.
+
+    Si falla cualquiera de las dos, solo salen los generales (con un warning sin el NIT) y editar o borrar responde
+    `TERMINO_NO_ENCONTRADO`; si la consulta de control falla, falla la operación. Un término sin `clienteId` nunca sale. La consulta
+    de control solo se hace cuando la respuesta trae términos de cliente. Cotifly sigue sin resolver ni guardar el `clienteId` de NEXO
+    (punto 3). Lo más fuerte sería que NEXO mandara el NIT en cada término: se le puede pedir.
+
+    **Lo que cubre y lo que no.** Cubre un NEXO que ignora `clienteNit` (o que con un NIT desconocido responde todos los clientes). No
+    cubre un NEXO que filtra pero resuelve el NIT a otro cliente: ahí ambas comprobaciones pasan, y es un defecto que corrige NEXO. Depende
+    de que NEXO responda `200` sin términos propios a un NIT sin cliente local (hoy normaliza conservando letras y filtra por un id
+    inexistente); si algún día rechazara `COTIFLYSINCLIENTE` con un 400, la consulta y la edición del diccionario de un cliente con términos
+    fallarían (cerrado, sin fuga). Cuesta una llamada más a NEXO por consulta con términos de cliente (tres por edición o borrado).
+    Comparar `clienteNombre` con el nombre que Cotifly conoce del NIT se descartó: el nombre del DW no siempre coincide con el del cliente
+    local de NEXO y un prospecto nuevo no tiene nombre en Cotifly.
+  - **Escritura solo para un cliente y solo por el comercial.** `POST`, `PUT /{id}` y `DELETE /{id}?nit_cliente=` exigen el NIT (desde
+    Cotifly no se crean términos generales) y la política `SoloComercial` (rol activo `comercial`; gerente y director solo consultan).
+    Antes de editar o borrar se listan los términos del cliente: un término general responde `403 TERMINO_GENERAL_NO_EDITABLE` y un id
+    que no está entre los del cliente, `404 TERMINO_NO_ENCONTRADO`, sin escribir en NEXO. El `POST` manda el cliente por `clienteNit`
+    (nunca `clienteId`) y el `PUT`, solo los campos editables. Ninguna escritura se reintenta. Como las plantillas y los formatos, el
+    diccionario es del cliente: no hay control de cartera (cualquier comercial mantiene el de cualquier NIT) y el rastro queda en la
+    auditoría de NEXO con el usuario del portal.
+  - **Errores.** Los códigos del diccionario de NEXO pasan tal cual (`TERMINO_REQUERIDO`, `CONCEPTO_REQUERIDO`, `CAMPO_DESTINO_INVALIDO`,
+    `UNIDAD_INVALIDA`, `CONTEXTO_INVALIDO`, `CONTEXTO_NO_APLICA`, `EJEMPLO_MUY_LARGO`, `404 TERMINO_NO_ENCONTRADO`, `409
+    TERMINO_DUPLICADO`); otro 409 o un 404 sin código es `COSTEO_NEXO_RECHAZADA`. Los vacíos y los largos (`termino` 200, `tipo` 100,
+    `concepto` 100, `contexto` 50, `ejemplo` 500) los valida Cotifly antes de llamar.
+  - **Rastro.** Crear, editar y borrar un término dejan una línea de log con el comercial y el id del término, sin el NIT ni el texto.
 - **Plantillas y formatos compartidos por cliente (decisión del usuario, 2026-11-09).** Las plantillas de mapeo y los formatos de lectura son
   del **cliente**, no del comercial: cualquier comercial (o gerente o director) puede listarlos por NIT y borrarlos por id, y Cotifly no
   verifica dueño. Exigir el NIT en el `DELETE` y cruzarlo con el listado no cerraría ningún acceso, porque cualquier comercial puede

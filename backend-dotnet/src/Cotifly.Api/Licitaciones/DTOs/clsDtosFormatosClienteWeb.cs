@@ -83,16 +83,39 @@ public sealed record clsRecetaLecturaWeb(
 }
 
 /// <summary>
-/// <c>DiccionarioCliente</c>: los términos del diccionario que Cotifly puede mostrar (hoy, solo los generales) y el <c>aviso</c> cuando se
-/// pidió con NIT (<c>TERMINOS_CLIENTE_NO_DISPONIBLES</c>); <c>null</c> sin NIT.
+/// <c>DiccionarioCliente</c>: los términos del diccionario que Cotifly puede mostrar (con NIT, los del cliente y los generales; sin NIT, solo
+/// los generales). <c>aviso</c> está reservado en el contrato y hoy siempre es <c>null</c>.
 /// </summary>
 public sealed record clsDiccionarioClienteWeb(IReadOnlyList<clsTerminoDiccionarioWeb> Terminos, clsAvisoDiccionario? Aviso)
 {
     public static clsDiccionarioClienteWeb Desde(clsConsultaDiccionarioCliente consulta)
     {
         ArgumentNullException.ThrowIfNull(consulta);
-        return new([.. consulta.Terminos.Select(clsTerminoDiccionarioWeb.Desde)], consulta.Aviso);
+        return new([.. consulta.Terminos.Select(clsTerminoDiccionarioWeb.Desde)], null);
     }
+}
+
+/// <summary>
+/// <c>TerminoDiccionarioWeb</c>: <c>POST</c> y <c>PUT /web/diccionario-cliente</c>. <c>nit_cliente</c> es obligatorio (desde Cotifly no se
+/// crean términos generales); <c>activo</c> ausente = <c>true</c>. Los vacíos y los largos los valida el caso de uso antes de NEXO.
+/// </summary>
+public sealed class clsTerminoDiccionarioWebRequest
+{
+    public string? NitCliente { get; init; }
+
+    public string? Termino { get; init; }
+
+    public string? Tipo { get; init; }
+
+    public string? Concepto { get; init; }
+
+    public string? Contexto { get; init; }
+
+    public string? Ejemplo { get; init; }
+
+    public bool? Activo { get; init; }
+
+    public clsEntradaTerminoCliente AEntrada() => new(NitCliente, Termino, Tipo, Concepto, Contexto, Ejemplo, Activo);
 }
 
 /// <summary>
